@@ -7,11 +7,12 @@ from pathlib import Path
 
 from cryptography import x509
 from cryptography.hazmat.primitives import hashes
-from cryptography.hazmat.primitives.asymmetric import ec
+from cryptography.hazmat.primitives.asymmetric import ec, rsa
+from cryptography.hazmat.primitives import serialization
 
 from acn_sdk.credential.credential_issuer import CredentialIssuer
 from acn_sdk.models import RobotInfo
-from acn_sdk.crypto import ensure_ec_keypair
+from acn_sdk.crypto import ensure_ec_keypair, sign_payload
 from acn_sdk.network.http_client import HttpClient
 from acn_sdk.sdk import AcnSDK
 
@@ -133,6 +134,38 @@ def test_ensure_ec_keypair_creates_and_preserves_local_keys(tmp_path: Path) -> N
 
     assert private_key_file.read_text(encoding="utf-8") == first_private
     assert public_key_file.read_text(encoding="utf-8") == first_public
+
+
+def test_ensure_ec_keypair_replaces_legacy_rsa_keys(tmp_path: Path) -> None:
+    private_key_file = tmp_path / "keys" / "private.pem"
+    public_key_file = tmp_path / "keys" / "public.pem"
+    private_key_file.parent.mkdir(parents=True, exist_ok=True)
+
+    rsa_private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    private_key_file.write_bytes(
+        rsa_private_key.private_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PrivateFormat.PKCS8,
+            encryption_algorithm=serialization.NoEncryption(),
+        )
+    )
+    public_key_file.write_bytes(
+        rsa_private_key.public_key().public_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PublicFormat.SubjectPublicKeyInfo,
+        )
+    )
+
+    ensure_ec_keypair(str(private_key_file), str(public_key_file))
+
+    loaded_private_key = serialization.load_pem_private_key(private_key_file.read_bytes(), password=None)
+    loaded_public_key = serialization.load_pem_public_key(public_key_file.read_bytes())
+    assert isinstance(loaded_private_key, ec.EllipticCurvePrivateKey)
+    assert isinstance(loaded_public_key, ec.EllipticCurvePublicKey)
+
+    signature = sign_payload(str(private_key_file), {"message": "hello"})
+    assert isinstance(signature, str)
+    assert signature
 
 
 def test_identity_manager_loads_legacy_single_capability_vc(tmp_path: Path) -> None:
