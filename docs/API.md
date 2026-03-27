@@ -75,6 +75,7 @@ POST /idm/v1/identity-applications
 副作用：
 
 - `IdentityManager` 保存 `agent_id`、`vc0`、机器人信息
+- `signature` 仅基于 `timestamp` 生成，编码采用 `base64`
 
 ### `register_agent_attribute(capability: list[str]) -> dict[str, Any]`
 
@@ -90,6 +91,7 @@ POST /arf/v1/agent-cards
 
 - 原始需求中出现 `agent—cards`，其中连接符疑似排版字符；工程中统一采用标准路径 `/arf/v1/agent-cards`。
 - 当前请求体只包含 `agent_id`、`priority`、`timestamp`、`signature`、`signature_encoding`、`vc_list`
+- `signature` 仅基于 `timestamp` 生成，编码采用 `base64`
 - `vc_list` 中第一个元素为 `vc0`，后续元素为全部能力 VC
 - 当前能力 VC 使用 `BindingSIMCredential`，签名按发放者私钥生成：华为发放者使用 `Huawei_private_key.pem`，RobotFactory 发放者使用 `Robot_Factory_private_key.pem`
 
@@ -163,6 +165,7 @@ POST /acn-agent/v1/agent-deletions
 - 清空本地 `agent_id`、`vc0`、`capability_vcs`
 - 关闭 HTTP/WebSocket/MoQ 连接
 - 停止全部任务
+- `signature` 仅基于 `timestamp` 生成，编码采用 `base64`
 
 ### `connect_network() -> None`
 

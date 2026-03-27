@@ -22,7 +22,11 @@ class MockResponse:
 
 
 class MockHttpSession:
+    def __init__(self) -> None:
+        self.requests: list[tuple[str, dict[str, Any], dict[str, str] | None]] = []
+
     def post(self, url: str, json: dict[str, Any], headers: dict[str, str] | None = None) -> MockResponse:
+        self.requests.append((url, json, headers))
         if url == "/idm/v1/identity-applications":
             now = datetime.now(timezone.utc)
             payload = {

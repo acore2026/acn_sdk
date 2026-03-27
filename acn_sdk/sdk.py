@@ -7,7 +7,7 @@ from typing import Any
 
 from .config import SDKConfig
 from .credential.credential_issuer import CredentialIssuer, HUAWEI_ISSUER_DID
-from .crypto import ensure_ec_keypair, load_public_key_pem, sign_payload
+from .crypto import ensure_ec_keypair, load_public_key_pem, sign_timestamp
 from .identity.identity_manager import IdentityManager
 from .logging_config import setup_logging
 from .models import AgentCardRequest, DeregisterRequest, RobotInfo
@@ -16,7 +16,7 @@ from .network.moq_client import MoQClient
 from .network.websocket_client import WebSocketClient
 from .task.task_manager import TaskManager
 
-DEFAULT_CONFIG_PATH = Path("config/config.yaml")
+DEFAULT_CONFIG_PATH = Path(__file__).resolve().parent.parent / "config" / "config.yaml"
 
 
 class AcnSDK:
@@ -26,7 +26,7 @@ class AcnSDK:
         issuer_id: str = HUAWEI_ISSUER_DID,
         config_path: str | Path | None = None,
     ) -> None:
-        self.config_path = Path(config_path) if config_path is not None else DEFAULT_CONFIG_PATH
+        self.config_path = Path(config_path).expanduser().resolve() if config_path is not None else DEFAULT_CONFIG_PATH
         self.config = SDKConfig.load(self.config_path)
         self.robot_name = robot_name
         self.credential_issuer = CredentialIssuer(issuer_id=issuer_id)
@@ -77,7 +77,7 @@ class AcnSDK:
             "timestamp": timestamp,
             "metadata": robot_info.metadata,
         }
-        payload["signature"] = sign_payload(self.config.storage.private_key_file, payload)
+        payload["signature"] = sign_timestamp(self.config.storage.private_key_file, timestamp)
         payload["signature_encoding"] = "base64"
 
         response = self.http_client.register_robot_info(payload)
@@ -107,18 +107,12 @@ class AcnSDK:
         vc_list = [self.identity_manager.vc0, *capability_vcs]
 
         timestamp = self._utc_timestamp()
-        sign_source = {
-            "agent_id": self.identity_manager.agent_id,
-            "priority": self.identity_manager.priority or 0,
-            "timestamp": timestamp,
-            "vc_list": vc_list,
-        }
         payload = AgentCardRequest(
             agent_id=self.identity_manager.agent_id,
             priority=self.identity_manager.priority or 0,
             timestamp=timestamp,
+            signature=sign_timestamp(self.config.storage.private_key_file, timestamp),
             vc_list=vc_list,
-            signature=sign_payload(self.config.storage.private_key_file, sign_source),
         )
         response = self.http_client.register_agent_attribute(payload)
         self._logger.info("Robot attribute registered. response=%s", response)
@@ -139,16 +133,11 @@ class AcnSDK:
             raise ValueError("The supplied agent_id does not match this device.")
 
         timestamp = self._utc_timestamp()
-        sign_source = {
-            "agent_id": agent_id,
-            "reason": reason,
-            "timestamp": timestamp,
-        }
         request = DeregisterRequest(
             agent_id=agent_id,
             reason=reason,
             timestamp=timestamp,
-            signature=sign_payload(self.config.storage.private_key_file, sign_source),
+            signature=sign_timestamp(self.config.storage.private_key_file, timestamp),
         )
         response = self.http_client.deregister_robot(request)
 

@@ -126,9 +126,11 @@ pytest
 当前主流程已经通过本地自动化测试验证：
 
 - SDK 初始化时自动生成并保存 EC 公私钥
-- 身份注册会持久化 `agent_id` 和 `vc0`
-- 能力注册会生成多个能力 VC，并按 `vc_list` 发送到 `/arf/v1/agent-cards`
-- 去注册只清理身份状态，不删除本地密钥
+- 身份注册会持久化 `agent_id` 和 `vc0`，请求体中的 `signature` 仅基于 `timestamp` 生成，编码采用 `base64`
+- 能力注册会生成多个能力 VC，并按 `vc_list` 发送到 `/arf/v1/agent-cards`，请求体字段顺序为 `agent_id`、`priority`、`timestamp`、`signature`、`signature_encoding`、`vc_list`
+- 去注册只清理身份状态，不删除本地密钥，请求体中的 `signature` 仅基于 `timestamp` 生成，编码采用 `base64`
+
+接口请求约定与最新示例以 [docs/API.md](docs/API.md) 为准。
 
 ## 文档
 

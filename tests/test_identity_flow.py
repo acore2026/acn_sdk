@@ -49,6 +49,38 @@ def test_register_query_and_deregister_flow(sdk_environment: object) -> None:
     assert sdk.network_status == "OFFLINE"
 
 
+def test_request_signatures_use_timestamp_only_and_agent_card_encoding_order(sdk_environment: object) -> None:
+    sdk = create_sdk()
+    robot_info = RobotInfo(
+        name="AliceAgent",
+        owner="+8613800138000",
+        description="AgentModel-X, SN123456",
+        priority=5,
+        metadata={"region": "CN"},
+    )
+
+    agent_id = sdk.register_robot_info(robot_info)
+    identity_request = sdk.http_client._session.requests[0][1]
+
+    capability_response = sdk.register_agent_attribute(["pick"])
+    agent_card_request = sdk.http_client._session.requests[1][1]
+
+    deregister_response = sdk.deregister_robot(agent_id, "retired")
+    deregister_request = sdk.http_client._session.requests[2][1]
+
+    assert identity_request["signature_encoding"] == "base64"
+    assert agent_card_request["signature_encoding"] == "base64"
+    assert deregister_request["signature_encoding"] == "base64"
+    assert list(agent_card_request.keys()).index("signature_encoding") == list(agent_card_request.keys()).index("signature") + 1
+
+    _verify_timestamp_only_signature(identity_request, Path(sdk.config.storage.public_key_file))
+    _verify_timestamp_only_signature(agent_card_request, Path(sdk.config.storage.public_key_file))
+    _verify_timestamp_only_signature(deregister_request, Path(sdk.config.storage.public_key_file))
+
+    assert capability_response["result"] == "success"
+    assert deregister_response["result"] == "success"
+
+
 def test_deregister_with_mismatched_agent_id_raises(sdk_environment: object) -> None:
     sdk = create_sdk()
     robot_info = RobotInfo(
@@ -211,6 +243,16 @@ def _verify_signature(vc: dict[str, object], cert_path: Path) -> None:
     cert = x509.load_pem_x509_certificate(cert_path.read_bytes())
     cert.public_key().verify(
         base64.b64decode(proof["signature_value"]),
+        serialized,
+        ec.ECDSA(hashes.SHA256()),
+    )
+
+
+def _verify_timestamp_only_signature(body: dict[str, object], public_key_path: Path) -> None:
+    serialized = str(body["timestamp"]).encode("utf-8")
+    public_key = serialization.load_pem_public_key(public_key_path.read_bytes())
+    public_key.verify(
+        base64.b64decode(body["signature"]),
         serialized,
         ec.ECDSA(hashes.SHA256()),
     )

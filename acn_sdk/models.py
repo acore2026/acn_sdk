@@ -18,8 +18,8 @@ class AgentCardRequest(BaseModel):
     priority: int
     timestamp: str
     signature: str
-    vc_list: list[dict[str, Any]]
     signature_encoding: str = "base64"
+    vc_list: list[dict[str, Any]]
 
 
 class DeregisterRequest(BaseModel):

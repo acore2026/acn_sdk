@@ -52,8 +52,13 @@ def _is_ec_keypair(private_path: Path, public_path: Path) -> bool:
     )
 
 
-def sign_payload(private_key_file: str, payload: dict[str, Any]) -> str:
-    serialized = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+def sign_payload(private_key_file: str, payload: Any) -> str:
+    if isinstance(payload, bytes):
+        serialized = payload
+    elif isinstance(payload, str):
+        serialized = payload.encode("utf-8")
+    else:
+        serialized = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
     private_key = serialization.load_pem_private_key(
         Path(private_key_file).read_bytes(),
         password=None,
@@ -63,3 +68,7 @@ def sign_payload(private_key_file: str, payload: dict[str, Any]) -> str:
         ec.ECDSA(hashes.SHA256()),
     )
     return base64.b64encode(signature).decode("utf-8")
+
+
+def sign_timestamp(private_key_file: str, timestamp: str) -> str:
+    return sign_payload(private_key_file, timestamp)

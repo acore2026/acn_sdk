@@ -49,9 +49,23 @@ class SDKConfig(BaseModel):
 
     @classmethod
     def load(cls, path: str | Path) -> "SDKConfig":
-        with Path(path).open("r", encoding="utf-8") as file:
+        config_path = Path(path).expanduser().resolve()
+        with config_path.open("r", encoding="utf-8") as file:
             content = yaml.safe_load(file) or {}
-        return cls.model_validate(content)
+        config = cls.model_validate(content)
+        base_dir = config_path.parent.parent if config_path.parent.name == "config" else config_path.parent
+
+        def resolve_path(value: str) -> str:
+            candidate = Path(value).expanduser()
+            if candidate.is_absolute():
+                return str(candidate)
+            return str((base_dir / candidate).resolve())
+
+        config.storage.identity_file = resolve_path(config.storage.identity_file)
+        config.storage.private_key_file = resolve_path(config.storage.private_key_file)
+        config.storage.public_key_file = resolve_path(config.storage.public_key_file)
+        config.storage.log_dir = resolve_path(config.storage.log_dir)
+        return config
 
     def save(self, path: str | Path) -> None:
         target = Path(path)

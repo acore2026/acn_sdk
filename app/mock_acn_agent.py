@@ -32,8 +32,8 @@ class AgentCard(BaseModel):
     priority: int
     timestamp: str
     signature: str
-    vc_list: list[dict]
     signature_encoding: str
+    vc_list: list[dict]
 
 
 class AgentDeletion(BaseModel):
