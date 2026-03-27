@@ -24,7 +24,7 @@ acn_sdk.task.task_manager.TaskManager
 - 将 `WebSocketClient`、`moq_pub_client`、`moq_sub_client`、`TaskManager` 初值设为 `None`
 - 设置网络状态为 `OFFLINE`
 - 若本地不存在密钥，则自动生成并保存
-- `issuer_id` 用于选择能力 VC 的发放者；默认使用华为发放者，也可传入 RobotFactory 对应的发放者标识
+- `issuer_id` 目前保留为兼容参数；能力 VC 的实际发放者已改为按能力名称自动选择
 - 可通过 `config_path` 参数指定其他 YAML 配置文件；运行中修改 YAML 后可调用 `reload_config()` 重新加载
 
 ### `reload_config() -> None`
@@ -92,7 +92,7 @@ POST /arf/v1/agent-cards
 - 当前请求体只包含 `agent_id`、`timestamp`、`signature`、`signature_encoding`、`vc_list`
 - `signature` 仅基于 `timestamp` 生成，编码采用 `base64`
 - `vc_list` 中第一个元素为 `vc0`，后续元素为全部能力 VC
-- 当前能力 VC 使用 `BindingSIMCredential`，签名按发放者私钥生成：华为发放者使用 `Huawei_private_key.pem`，RobotFactory 发放者使用 `Robot_Factory_private_key.pem`
+- 当前能力 VC 使用 `BindingSIMCredential`，签名按能力名称自动分流：`可疑人员识别` 和 `目标跟踪` 使用华为发放者及 `Huawei_private_key.pem`，其他能力使用 RobotFactory 发放者及 `Robot_Factory_private_key.pem`
 
 请求体示例：
 
@@ -107,7 +107,7 @@ POST /arf/v1/agent-cards
       "context": ["3gpp-ts-33.xxx-v20.0.0"],
       "id": "CMCC/credentials/3732",
       "type": ["VerifiableCredential", "BindingSIMCredential"],
-      "issuer": "did:udid:NewTypeOperator.rid678@6gc.mnc015.mcc234.3gppnetwork",
+      "issuer": "did:robotfactoryissuer@6gc.mnc015.mcc234.3gppnetwork",
       "valid_from": "2026-03-27T10:00:00+00:00",
       "valid_until": "2027-03-27T10:00:00+00:00",
       "claims": {
@@ -118,7 +118,7 @@ POST /arf/v1/agent-cards
         "self_id": "type0.self.mock@3gppnetwork.org"
       },
       "proof": {
-        "creator": "did:udid:NewTypeOperator.rid678@6gc.mnc015.mcc234.3gppnetwork#keys-1",
+        "creator": "did:robotfactoryissuer@6gc.mnc015.mcc234.3gppnetwork#keys-1",
         "signature_value": "mock-proof-signature"
       }
     },

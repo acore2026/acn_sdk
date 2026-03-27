@@ -13,6 +13,8 @@ from cryptography.hazmat.primitives.asymmetric import ec
 
 
 HUAWEI_ISSUER_DID = "did:huaweiissuer@6gc.mnc015.mcc234.3gppnetwork"
+ROBOT_FACTORY_ISSUER_DID = "did:robotfactoryissuer@6gc.mnc015.mcc234.3gppnetwork"
+SPECIAL_HUAWEI_CAPABILITIES = {"可疑人员识别", "目标跟踪"}
 CERT_DIR = Path(__file__).resolve().parent / "cert"
 PRIVATE_KEY_PASSWORD = b"aicore2026"
 
@@ -27,13 +29,10 @@ def sign_data(private_key_path: str, message: bytes) -> bytes:
     return private_key.sign(message, ec.ECDSA(hashes.SHA256()))
 
 
-def _load_private_key_path(issuer_id: str) -> Path:
-    issuer_name = issuer_id.lower()
-    if "huawei" in issuer_name:
-        return CERT_DIR / "Huawei_private_key.pem"
-    if "robotfactory" in issuer_name or "robot_factory" in issuer_name or "factory" in issuer_name:
-        return CERT_DIR / "Robot_Factory_private_key.pem"
-    raise ValueError(f"Unsupported issuer_id for capability VC signing: {issuer_id}")
+def _resolve_issuer_profile(capability: str) -> tuple[str, Path, str]:
+    if capability in SPECIAL_HUAWEI_CAPABILITIES:
+        return HUAWEI_ISSUER_DID, CERT_DIR / "Huawei_private_key.pem", "huawei"
+    return ROBOT_FACTORY_ISSUER_DID, CERT_DIR / "Robot_Factory_private_key.pem", "robot-factory"
 
 
 class CredentialIssuer:
@@ -43,18 +42,15 @@ class CredentialIssuer:
 
     def fetch_capacity_vc(self, agent_id: str, capabilities: list[str], agent_name: str) -> list[dict[str, Any]]:
         now = datetime.now(timezone.utc)
-        issuer_name = self.issuer_id.lower()
-        credential_prefix = "huawei"
-        if "robotfactory" in issuer_name or "robot_factory" in issuer_name or "factory" in issuer_name:
-            credential_prefix = "robot_factory"
         vcs = []
         for capability in capabilities:
+            issuer_id, private_key_path, credential_prefix = _resolve_issuer_profile(capability)
             credential_suffix = f"{secrets.randbelow(10000):04d}"
             vc = {
                 "context": ["3gpp-ts-33.xxx-v20.0.0"],
                 "id": f"{credential_prefix}/credentials/{credential_suffix}",
                 "type": ["VerifiableCredential", "BindingSIMCredential"],
-                "issuer": self.issuer_id,
+                "issuer": issuer_id,
                 "valid_from": now.isoformat(),
                 "valid_until": (now + timedelta(days=365)).isoformat(),
                 "claims": {
@@ -66,13 +62,13 @@ class CredentialIssuer:
             }
             signature_payload = json.dumps(vc, sort_keys=True, separators=(",", ":")).encode("utf-8")
             signature_value = base64.b64encode(
-                sign_data(str(_load_private_key_path(self.issuer_id)), signature_payload)
+                sign_data(str(private_key_path), signature_payload)
             ).decode("utf-8")
             vcs.append(
                 {
                     **vc,
                     "proof": {
-                        "creator": f"{self.issuer_id}#keys-1",
+                        "creator": f"{issuer_id}#keys-1",
                         "signature_value": signature_value,
                     },
                 }

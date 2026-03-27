@@ -10,7 +10,11 @@ from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import ec, rsa
 from cryptography.hazmat.primitives import serialization
 
-from acn_sdk.credential.credential_issuer import CredentialIssuer
+from acn_sdk.credential.credential_issuer import (
+    CredentialIssuer,
+    HUAWEI_ISSUER_DID,
+    ROBOT_FACTORY_ISSUER_DID,
+)
 from acn_sdk.models import RobotInfo
 from acn_sdk.crypto import ensure_ec_keypair, sign_payload
 from acn_sdk.network.http_client import HttpClient
@@ -217,26 +221,35 @@ def test_identity_manager_loads_legacy_single_capability_vc(tmp_path: Path) -> N
 def test_fetch_capacity_vc_uses_issuer_specific_private_key() -> None:
     agent_id = "did:acn:agent:987654321"
     huawei_issuer = CredentialIssuer()
-    huawei_vc = huawei_issuer.fetch_capacity_vc(agent_id, ["pick"], "AliceAgent")[0]
+    huawei_vc = huawei_issuer.fetch_capacity_vc(agent_id, ["可疑人员识别"], "AliceAgent")[0]
     assert huawei_vc["id"].startswith("huawei/credentials/")
     assert len(huawei_vc["id"].rsplit("/", 1)[-1]) == 4
 
     assert huawei_vc["type"] == ["VerifiableCredential", "BindingSIMCredential"]
-    assert huawei_vc["proof"]["creator"] == f"{huawei_issuer.issuer_id}#keys-1"
+    assert huawei_vc["issuer"] == HUAWEI_ISSUER_DID
+    assert huawei_vc["proof"]["creator"] == f"{HUAWEI_ISSUER_DID}#keys-1"
     _verify_signature(
         huawei_vc,
         Path("/home/acn/zxy/acn_sdk/credential/cert/Huawei_cert.crt"),
     )
 
-    robot_factory_issuer = CredentialIssuer("did:udid:robotfactory")
+    robot_factory_issuer = CredentialIssuer(ROBOT_FACTORY_ISSUER_DID)
     robot_factory_vc = robot_factory_issuer.fetch_capacity_vc(agent_id, ["place"], "AliceAgent")[0]
 
     assert robot_factory_vc["type"] == ["VerifiableCredential", "BindingSIMCredential"]
-    assert robot_factory_vc["proof"]["creator"] == f"{robot_factory_issuer.issuer_id}#keys-1"
+    assert robot_factory_vc["issuer"] == ROBOT_FACTORY_ISSUER_DID
+    assert robot_factory_vc["proof"]["creator"] == f"{ROBOT_FACTORY_ISSUER_DID}#keys-1"
     _verify_signature(
         robot_factory_vc,
         Path("/home/acn/zxy/acn_sdk/credential/cert/Robot_Factory_cert.crt"),
     )
+
+    mixed_vcs = huawei_issuer.fetch_capacity_vc(agent_id, ["可疑人员识别", "place", "目标跟踪"], "AliceAgent")
+    assert [vc["issuer"] for vc in mixed_vcs] == [
+        HUAWEI_ISSUER_DID,
+        ROBOT_FACTORY_ISSUER_DID,
+        HUAWEI_ISSUER_DID,
+    ]
 
 
 def _verify_signature(vc: dict[str, object], cert_path: Path) -> None:
