@@ -6,8 +6,8 @@ from pathlib import Path
 from typing import Any
 
 from .config import SDKConfig
-from .credential.credential_issuer import CredentialIssuer
-from .crypto import ensure_rsa_keypair, load_public_key_pem, sign_payload
+from .credential.credential_issuer import CredentialIssuer, HUAWEI_ISSUER_DID
+from .crypto import ensure_ec_keypair, load_public_key_pem, sign_payload
 from .identity.identity_manager import IdentityManager
 from .logging_config import setup_logging
 from .models import AgentCardRequest, DeregisterRequest, RobotInfo
@@ -20,24 +20,23 @@ DEFAULT_CONFIG_PATH = Path("config/config.yaml")
 
 
 class AcnSDK:
-    def __init__(self, robot_name: str) -> None:
-        self.config = SDKConfig.load(DEFAULT_CONFIG_PATH)
-        setup_logging(self.config.log_level, self.config.storage.log_dir)
-        self._logger = logging.getLogger(self.__class__.__name__)
+    def __init__(
+        self,
+        robot_name: str,
+        issuer_id: str = HUAWEI_ISSUER_DID,
+        config_path: str | Path | None = None,
+    ) -> None:
+        self.config_path = Path(config_path) if config_path is not None else DEFAULT_CONFIG_PATH
+        self.config = SDKConfig.load(self.config_path)
         self.robot_name = robot_name
-        self.identity_manager = IdentityManager(self.config.storage.identity_file)
-        self.http_client = HttpClient(self.config.network.acn_agent_url)
-        self.credential_issuer = CredentialIssuer()
+        self.credential_issuer = CredentialIssuer(issuer_id=issuer_id)
         self.websocket_client: WebSocketClient | None = None
         self.moq_pub_client: MoQClient | None = None
         self.moq_sub_client: MoQClient | None = None
         self.task_manager: TaskManager | None = None
         self.network_status = "OFFLINE"
 
-        ensure_rsa_keypair(
-            self.config.storage.private_key_file,
-            self.config.storage.public_key_file,
-        )
+        self._apply_config()
         self._logger.info("AcnSDK initialized for robot=%s, network_status=%s", robot_name, self.network_status)
         self._logger.info(
             "SDK local ports http=%s ws=%s moq_pub=%s moq_sub=%s, network acn_agent=%s ws=%s moq=%s web_ui=%s",
@@ -50,6 +49,22 @@ class AcnSDK:
             self.config.network.agent_gw_moq_port,
             self.config.network.web_ui_port,
         )
+
+    def reload_config(self) -> None:
+        if any(
+            client is not None
+            for client in (
+                self.websocket_client,
+                self.moq_pub_client,
+                self.moq_sub_client,
+                self.task_manager,
+            )
+        ):
+            self.disconnect_all()
+
+        self.config = SDKConfig.load(self.config_path)
+        self._apply_config()
+        self._logger.info("Reloaded configuration from %s", self.config_path)
 
     def register_robot_info(self, robot_info: RobotInfo) -> str:
         timestamp = self._utc_timestamp()
@@ -83,28 +98,26 @@ class AcnSDK:
         if not self.identity_manager.agent_id or not self.identity_manager.vc0:
             raise RuntimeError("Robot identity must be registered before capabilities.")
 
-        capability_vc = self.credential_issuer.fetch_capacity_vc(
+        capability_vcs = self.credential_issuer.fetch_capacity_vc(
             self.identity_manager.agent_id,
             capability,
+            self.identity_manager.robot_name or self.robot_name,
         )
-        self.identity_manager.set_capability_vc(capability_vc)
+        self.identity_manager.set_capability_vcs(capability_vcs)
+        vc_list = [self.identity_manager.vc0, *capability_vcs]
 
         timestamp = self._utc_timestamp()
         sign_source = {
             "agent_id": self.identity_manager.agent_id,
-            "capabilities": capability,
+            "priority": self.identity_manager.priority or 0,
             "timestamp": timestamp,
+            "vc_list": vc_list,
         }
         payload = AgentCardRequest(
             agent_id=self.identity_manager.agent_id,
-            robot_name=self.identity_manager.robot_name or self.robot_name,
-            owner=self.identity_manager.owner or "",
             priority=self.identity_manager.priority or 0,
-            capabilities=capability,
-            vc0=self.identity_manager.vc0,
-            capability_vc=capability_vc,
-            metadata=self.identity_manager.metadata,
             timestamp=timestamp,
+            vc_list=vc_list,
             signature=sign_payload(self.config.storage.private_key_file, sign_source),
         )
         response = self.http_client.register_agent_attribute(payload)
@@ -180,6 +193,16 @@ class AcnSDK:
             self.task_manager = None
         self.network_status = "OFFLINE"
         self._logger.info("Network state changed to %s", self.network_status)
+
+    def _apply_config(self) -> None:
+        setup_logging(self.config.log_level, self.config.storage.log_dir)
+        self._logger = logging.getLogger(self.__class__.__name__)
+        self.identity_manager = IdentityManager(self.config.storage.identity_file)
+        self.http_client = HttpClient(self.config.network.acn_agent_url)
+        ensure_ec_keypair(
+            self.config.storage.private_key_file,
+            self.config.storage.public_key_file,
+        )
 
     @staticmethod
     def _utc_timestamp() -> str:

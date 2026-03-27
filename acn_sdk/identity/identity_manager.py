@@ -13,7 +13,7 @@ class IdentityManager:
         self.identity_file.parent.mkdir(parents=True, exist_ok=True)
         self.agent_id: str | None = None
         self.vc0: dict[str, Any] | None = None
-        self.capability_vc: dict[str, Any] | None = None
+        self.capability_vcs: list[dict[str, Any]] = []
         self.robot_name: str | None = None
         self.owner: str | None = None
         self.priority: int | None = None
@@ -26,7 +26,13 @@ class IdentityManager:
         content = json.loads(self.identity_file.read_text(encoding="utf-8"))
         self.agent_id = content.get("agent_id")
         self.vc0 = content.get("vc0")
-        self.capability_vc = content.get("capability_vc")
+        capability_vcs = content.get("capability_vcs")
+        if capability_vcs is not None:
+            self.capability_vcs = capability_vcs
+        elif content.get("capability_vc") is not None:
+            self.capability_vcs = [content["capability_vc"]]
+        else:
+            self.capability_vcs = []
         self.robot_name = content.get("robot_name")
         self.owner = content.get("owner")
         self.priority = content.get("priority")
@@ -37,7 +43,7 @@ class IdentityManager:
         state = {
             "agent_id": self.agent_id,
             "vc0": self.vc0,
-            "capability_vc": self.capability_vc,
+            "capability_vcs": self.capability_vcs,
             "robot_name": self.robot_name,
             "owner": self.owner,
             "priority": self.priority,
@@ -66,8 +72,8 @@ class IdentityManager:
         self.metadata = metadata
         self.save()
 
-    def set_capability_vc(self, capability_vc: dict[str, Any]) -> None:
-        self.capability_vc = capability_vc
+    def set_capability_vcs(self, capability_vcs: list[dict[str, Any]]) -> None:
+        self.capability_vcs = capability_vcs
         self.save()
 
     def query_robot_id(self, robot_name: str, owner: str) -> str | None:
@@ -79,7 +85,7 @@ class IdentityManager:
         self._logger.info("Clearing identity state.")
         self.agent_id = None
         self.vc0 = None
-        self.capability_vc = None
+        self.capability_vcs = []
         self.robot_name = None
         self.owner = None
         self.priority = None

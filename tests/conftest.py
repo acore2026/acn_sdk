@@ -51,11 +51,16 @@ class MockHttpSession:
             return MockResponse(200, payload)
 
         if url == "/arf/v1/agent-cards":
+            capabilities = [
+                vc["claims"]["agent_attribute"]
+                for vc in json["vc_list"][1:]
+                if "claims" in vc and "agent_attribute" in vc["claims"]
+            ]
             payload = {
                 "result": "success",
                 "message": "Agent capability registered",
                 "agent_id": json["agent_id"],
-                "capabilities": json["capabilities"],
+                "capabilities": capabilities,
             }
             return MockResponse(200, payload)
 

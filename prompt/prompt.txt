@@ -1,0 +1,153 @@
+## 任务描述
+用python语言实现ACN系统中AcnSDK组件的开发。代码设计封装要合理，满足后续业务扩展。
+AcnSDK是运行在机器人端侧，用于与核心网侧AcnAgent和AgentGW通信的组件。需要包括以下组件：
+1. AcnSDK：主类
+2. IdentityManager：身份管理类，保存agent_id，核心网颁发的凭证VC0，和三方颁发的凭证能力VC
+3. CredentialIssuer：模拟三方，颁发能力VC
+4. HttpClient：http客户端，用来发送http请求
+5. WebSocketClient：websocket客户端，与网络侧建立长链接
+6. MoQClient：MoQ客户端，由于track的发布与订阅
+7. TaskManager：应用于任务管理
+8. 配置文件：用于记录HttpClient、WebSocketClient、MoQClient的端口，核心网网络IP以及AcnAgent和AgentGW的端口
+
+## 主要流程
+首先实现身份管理的功能
+1. 机器人创建AcnSDK实例，保存robot_name，IdentityManager、HttpClient、CredentialIssuer实例；定义WebSocketClient、MoQClient、TaskManager变量，初始值为None；网络状态为默认值"OFFLINE"；若本地不存在文件，生成公钥私钥并保存；
+2. 机器人调用AcnSDK的register_robot_info来申请数字身份，输入参数为RobotInfo，包括name，owner（电话号码格式），description，priority，以及附加信息metadata。AcnSDK调用httpClient的register_robot_info函数给AcnAgent发送POST请求（/idm/v1/identity-applications），收到响应后，解出agent_id和vc0保存到IdentityManager内，并向机器人返回agent_id;
+POST请求格式为：
+{
+    "method": "POST",
+    "url": "/idm/v1/identity-applications",
+    "headers": {
+        "Content-Type": "application/json",
+    },
+    "body": {
+        "owner": "xxxxx",
+        "name": "AliceAgent",
+        "public_key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8A...",
+        "description": "AgentModel-X, SN123456",
+	    "timestamp": "2024-03-23T12:00:00Z", 
+        "signature": "xxxxxxx", //使用私钥加密
+        "signature_encoding": "base64",
+        "metadata": {
+            "region": "CN",
+            "os": "Linux",
+            "version": "1.0.0"
+        }
+    }
+}
+
+响应格式为：
+
+{
+    "result": "success",
+    "agent_id": "did:acn:agent:987654321",
+    "vc0": {
+        "context": ["3gpp-ts-33.xxx-v20.0.0"],
+        "id": "CMCC/credentials/3732",
+        "type": ["VerifiableCredential", "BindingSIMCredential"],
+        "issuer": "did:udid:NewTypeOperator.rid678@6gc.mnc015.mcc234.3gppnetwork",
+        "valid_from": "2010-01-01T19:23:24Z",
+        "valid_until": "2020-01-01T19:23:24Z",
+        "claims": {
+            "agent_name": "Alice的个人助理",
+            "agent_id": "did:udid:NewType.rid678.schid0.userid30001@6gc.mnc015.mcc234.3gppnetwork",
+            "agent_attribute": "运营商颁发，Agent与主UE的绑定关系，用于对外出示，审计确权",
+            "master_id": "type0.rid678.schid0.userid1userid20001@6gc0001@6gc.mnc015.mcc234.3gppnetwork.org",
+            "self_id": "type0.rid678.schid0..mnc015.mcc234.3gppnetwork.org"
+        },
+        "proof": {
+            "creator": "did:udid:NewTypeOperator.rid678@6gc.mnc015.mcc234.3gppnetwork#keys-1",
+            "signature_value": "uill9900"
+        }
+    }
+}
+3. 机器人调用AcnSDK的register_agent_attribute来注册能力，输入参数为capability（list格式）。AcnSDK调用CredentialIssuer中的fetch_capacity_vc，获取能力vc，并将能力vc保存到IdentityManager中；组装payload_basic_info，调用httpClient的register_agent_attribute函数给AcnAgent发送POST请求（/arf/v1/agent—cards）
+POST格式参考：
+{
+    "method": "POST",
+    "url": "/arf/v1/agent-cards",
+    "headers": {
+        "Content-Type": "application/json",
+    },
+    "body": {
+        "agent_id": "type0.rid678.schid0.userid10001@6gc.mnc015.mcc234.3gppnetwork.org",
+        "priority": 2
+        "timestamp": "2024-03-23T12:00:00Z",
+        "signature": "base64_encoded_signature_string",
+        "vc_list": [
+            {
+                "context": ["3gpp-ts-33.xxx-v20.0.0"],
+                "id": "CMCC/credentials/3732",
+                "type": ["VerifiableCredential", "BindingSIMCredential"],
+                "issuer": "did:udid:NewTypeOperator.rid678@6gc.mnc015.mcc234.3gppnetwork",
+                "valid_from": "2010-01-01T19:23:24Z",
+                "valid_until": "2020-01-01T19:23:24Z",
+                "claims": {
+                    "agent_name": "Alice的个人助理",
+                    "agent_id": "did:udid:NewType.rid678.schid0.userid30001@6gc.mnc015.mcc234.3gppnetwork",
+                    "agent_attribute": "6G业务开通",
+                    "master_id": "type0.rid678.schid0.userid1userid20001@6gc0001@6gc.mnc015.mcc234.3gppnetwork.org",
+                    "self_id": "type0.rid678.schid0..mnc015.mcc234.3gppnetwork.org"
+                },
+                "proof": {
+                    "creator": "did:udid:NewTypeOperator.rid678@6gc.mnc015.mcc234.3gppnetwork#keys-1",
+                    "signature_value": "uill9900"
+                }
+            },
+            {
+                "context": ["3gpp-ts-33.xxx-v20.0.0"],
+                "id": "huawei/credentials/3737",
+                "type": ["VerifiableCredential", "BindingSIMCredential"],
+                "issuer": "did:udid:huawei",
+                "valid_from": "2020-01-01T19:23:24Z",
+                "valid_until": "2021-01-01T19:23:24Z",
+                "claims": {
+                    "agent_name": "Alice的个人助理",
+                    "agent_id": "did:udid:NewType.rid678.schid0.userid30001@6gc.mnc015.mcc234.3gppnetwork",
+                    "agent_attribute": "跌倒监测-手环",
+                    "authorization_mode": "Mode2"
+                },
+                "proof": {
+                    "creator": "did:udid:NewTypeOperator.rid678@6gc.mnc015.mcc234.3gppnetwork#keys-1",
+                    "signature_value": "xsdwe22"
+                }
+            }
+        ]
+    }
+}
+其中 vc_list包括vc0和所有的能力vc
+4. 提供查询数字身份的接口query_robot_id，输入参数为robot_name和owner，返回agent_id
+5. 提供去注册的接口deregister_robot，输入参数为agent_id和reason。AcnSDK确认agent_id是否与本设备一致后，组装payload_basic_info（agent_id, reason）;调用httpClient向ACN Agent发送POST消息请求（/acn-agent/v1/agent-deletions），组装body，用私钥给时间戳加密；收到响应后，调用clear函数，删除agent_id, vc0, 能力vc（IdentityManager提供clear接口），断开所有网络连接（http，websocket，moq），并结束所有任务
+POST请求格式为：
+{
+    "method": "POST",
+    "url": "/acn-agent/v1/agent-deletions",
+    "headers": {
+        "Content-Type": "application/json",
+    },
+    "body": {
+        "agent_id": "did:acn:agent:987654321",
+        "reason": "retired",
+        "timestamp": "2024-03-23T12:00:00Z",
+        "signature": "xxxxxxx", //私钥加密
+        "signature_encoding": "base64"
+    }
+}
+
+## 关键问题
+- 提供Linux系统下一键启动AcnSDK的脚本。
+- 代码只需要实现AcnSDK部分，不要进行AcnAgent、AgentGW等部件的开发。
+- 给出测试用例，AgentGW、AcnAgent部分打桩模拟即可。
+- 程序应同时支持在Linux和Ubuntu系统上运行。
+- 关键消息收发、业务处理必须添加日志（日志中打印出收到的消息的具体内容），关键状态转换必须添加日志记录（使用logging模块）
+
+## 技术栈
+- 语言：python
+- FastAPI
+
+## 交付件
+- 先给出系统整体项目结构目录，然后生成各模块代码，要求在Windows环境上使用pycharm开发调测，代码运行正确，实现功能符合预期
+- readme文档、quic start文档、系统架构模块设计文档以及接口API文档要详尽，涉及时序图或用例图等尽量使用Mermaid
+- 所有公共方法必须包含类型注解
+- 给出程序的启动和执行方式，pycharm开发调测，代码运行正确，实现功能符合预期 

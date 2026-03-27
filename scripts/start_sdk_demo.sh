@@ -17,6 +17,7 @@ fi
 
 source .venv/bin/activate
 pip install -r requirements.txt
+pip install -e .
 
 mkdir -p logs
 uvicorn app.mock_acn_agent:app --host 127.0.0.1 --port 9010 > logs/mock_acn_agent.log 2>&1 &
@@ -28,4 +29,4 @@ cleanup() {
 trap cleanup EXIT
 
 sleep 2
-python examples/demo_identity_flow.py
+python3 examples/demo_identity_flow.py

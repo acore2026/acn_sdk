@@ -29,15 +29,10 @@ class IdentityApplication(BaseModel):
 
 class AgentCard(BaseModel):
     agent_id: str
-    robot_name: str
-    owner: str
     priority: int
-    capabilities: list[str]
-    vc0: dict
-    capability_vc: dict
-    metadata: dict
     timestamp: str
     signature: str
+    vc_list: list[dict]
     signature_encoding: str
 
 
@@ -83,11 +78,12 @@ def create_identity_application(payload: IdentityApplication) -> dict:
 @app.post("/arf/v1/agent-cards")
 def create_agent_card(payload: AgentCard) -> dict:
     logger.info("Received agent card registration: %s", payload.model_dump(mode="json"))
+    capabilities = [vc["claims"]["agent_attribute"] for vc in payload.vc_list[1:] if "claims" in vc and "agent_attribute" in vc["claims"]]
     response = {
         "result": "success",
         "message": "Agent capability registered",
         "agent_id": payload.agent_id,
-        "capabilities": payload.capabilities,
+        "capabilities": capabilities,
     }
     logger.info("Responding agent card registration: %s", response)
     return response

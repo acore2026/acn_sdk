@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from acn_sdk import AcnSDK, RobotInfo
+
+
 def main() -> None:
     sdk = AcnSDK(robot_name="AliceAgent")
 

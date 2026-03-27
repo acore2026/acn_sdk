@@ -6,10 +6,10 @@ from pathlib import Path
 from typing import Any
 
 from cryptography.hazmat.primitives import hashes, serialization
-from cryptography.hazmat.primitives.asymmetric import padding, rsa
+from cryptography.hazmat.primitives.asymmetric import ec
 
 
-def ensure_rsa_keypair(private_key_file: str, public_key_file: str) -> None:
+def ensure_ec_keypair(private_key_file: str, public_key_file: str) -> None:
     private_path = Path(private_key_file)
     public_path = Path(public_key_file)
     private_path.parent.mkdir(parents=True, exist_ok=True)
@@ -18,7 +18,7 @@ def ensure_rsa_keypair(private_key_file: str, public_key_file: str) -> None:
     if private_path.exists() and public_path.exists():
         return
 
-    private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    private_key = ec.generate_private_key(ec.SECP256R1())
     public_key = private_key.public_key()
 
     private_bytes = private_key.private_bytes(
@@ -47,7 +47,6 @@ def sign_payload(private_key_file: str, payload: dict[str, Any]) -> str:
     )
     signature = private_key.sign(
         serialized,
-        padding.PKCS1v15(),
-        hashes.SHA256(),
+        ec.ECDSA(hashes.SHA256()),
     )
     return base64.b64encode(signature).decode("utf-8")

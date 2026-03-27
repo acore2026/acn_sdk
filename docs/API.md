@@ -14,7 +14,7 @@ acn_sdk.credential.credential_issuer.CredentialIssuer
 acn_sdk.task.task_manager.TaskManager
 ```
 
-### `AcnSDK.__init__(robot_name: str)`
+### `AcnSDK.__init__(robot_name: str, issuer_id: str = "did:huaweiissuer@6gc.mnc015.mcc234.3gppnetwork", config_path: str | Path = "config/config.yaml")`
 
 初始化 SDK，完成以下动作：
 
@@ -24,6 +24,19 @@ acn_sdk.task.task_manager.TaskManager
 - 将 `WebSocketClient`、`moq_pub_client`、`moq_sub_client`、`TaskManager` 初值设为 `None`
 - 设置网络状态为 `OFFLINE`
 - 若本地不存在密钥，则自动生成并保存
+- `issuer_id` 用于选择能力 VC 的发放者；默认使用华为发放者，也可传入 RobotFactory 对应的发放者标识
+- 可通过 `config_path` 参数指定其他 YAML 配置文件；运行中修改 YAML 后可调用 `reload_config()` 重新加载
+
+### `reload_config() -> None`
+
+重新读取 `config/config.yaml`（或 `config_path` 指定的文件），并刷新以下依赖：
+
+- 日志级别与日志目录
+- `IdentityManager`
+- `HttpClient`
+- 本地密钥文件路径
+
+如果当前已经连接了网络组件，`reload_config()` 会先断开现有连接，再按新配置重新初始化运行环境。
 
 ### `register_robot_info(robot_info: RobotInfo) -> str`
 
@@ -65,7 +78,7 @@ POST /idm/v1/identity-applications
 
 ### `register_agent_attribute(capability: list[str]) -> dict[str, Any]`
 
-先由 `CredentialIssuer` 模拟签发能力 VC，再向 `AcnAgent` 注册能力信息。
+先由 `CredentialIssuer` 按 `capability` 列表逐项模拟签发能力 VC，再向 `AcnAgent` 注册能力信息。
 
 请求路径：
 
@@ -76,6 +89,60 @@ POST /arf/v1/agent-cards
 说明：
 
 - 原始需求中出现 `agent—cards`，其中连接符疑似排版字符；工程中统一采用标准路径 `/arf/v1/agent-cards`。
+- 当前请求体只包含 `agent_id`、`priority`、`timestamp`、`signature`、`signature_encoding`、`vc_list`
+- `vc_list` 中第一个元素为 `vc0`，后续元素为全部能力 VC
+- 当前能力 VC 使用 `BindingSIMCredential`，签名按发放者私钥生成：华为发放者使用 `Huawei_private_key.pem`，RobotFactory 发放者使用 `Robot_Factory_private_key.pem`
+
+请求体示例：
+
+```json
+{
+  "agent_id": "did:acn:agent:987654321",
+  "priority": 5,
+  "timestamp": "2026-03-27T10:00:00Z",
+  "signature": "base64-signature",
+  "signature_encoding": "base64",
+  "vc_list": [
+    {
+      "context": ["3gpp-ts-33.xxx-v20.0.0"],
+      "id": "CMCC/credentials/3732",
+      "type": ["VerifiableCredential", "BindingSIMCredential"],
+      "issuer": "did:udid:NewTypeOperator.rid678@6gc.mnc015.mcc234.3gppnetwork",
+      "valid_from": "2026-03-27T10:00:00+00:00",
+      "valid_until": "2027-03-27T10:00:00+00:00",
+      "claims": {
+        "agent_name": "AliceAgent",
+        "agent_id": "did:acn:agent:987654321",
+        "agent_attribute": "运营商颁发，Agent与主UE的绑定关系，用于对外出示，审计确权",
+        "master_id": "type0.master.mock@3gppnetwork.org",
+        "self_id": "type0.self.mock@3gppnetwork.org"
+      },
+      "proof": {
+        "creator": "did:udid:NewTypeOperator.rid678@6gc.mnc015.mcc234.3gppnetwork#keys-1",
+        "signature_value": "mock-proof-signature"
+      }
+    },
+    {
+      "context": ["3gpp-ts-33.xxx-v20.0.0"],
+      "id": "huawei/credentials/3737",
+      "type": ["VerifiableCredential", "BindingSIMCredential"],
+      "issuer": "did:huaweiissuer@6gc.mnc015.mcc234.3gppnetwork",
+      "valid_from": "2026-03-27T10:00:00+00:00",
+      "valid_until": "2027-03-27T10:00:00+00:00",
+      "claims": {
+        "agent_name": "AliceAgent",
+        "agent_id": "did:acn:agent:987654321",
+        "agent_attribute": "pick",
+        "authorization_mode": "Mode2"
+      },
+      "proof": {
+        "creator": "did:huaweiissuer@6gc.mnc015.mcc234.3gppnetwork#keys-1",
+        "signature_value": "base64-ecdsa-signature"
+      }
+    }
+  ]
+}
+```
 
 ### `query_robot_id(robot_name: str, owner: str) -> str | None`
 
@@ -93,7 +160,7 @@ POST /acn-agent/v1/agent-deletions
 
 成功后：
 
-- 清空本地 `agent_id`、`vc0`、`capability_vc`
+- 清空本地 `agent_id`、`vc0`、`capability_vcs`
 - 关闭 HTTP/WebSocket/MoQ 连接
 - 停止全部任务
 
@@ -112,6 +179,13 @@ POST /acn-agent/v1/agent-deletions
 ```text
 config/config.yaml
 ```
+
+说明：
+
+- `config.py` 只定义配置模型和默认值
+- `config/config.yaml` 是运行时优先读取的配置源
+- 修改 YAML 后，如需让已启动的 SDK 立即生效，调用 `reload_config()`
+- 如果要切换部署环境，只需要改 YAML，不需要改 `acn_sdk/config.py`
 
 字段说明：
 
@@ -136,19 +210,34 @@ config/config.yaml
 命令行运行：
 
 ```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+pip install -e .
 uvicorn app.mock_acn_agent:app --host 127.0.0.1 --port 9010
-python examples/demo_identity_flow.py
+python3 examples/demo_identity_flow.py
 pytest
 ```
+
+推荐执行顺序：
+
+1. `pip install -r requirements.txt`
+2. `pip install -e .`
+3. `uvicorn app.mock_acn_agent:app --host 127.0.0.1 --port 9010`
+4. `python3 examples/demo_identity_flow.py`
+5. `pytest -q`
 
 PyCharm 调测：
 
 1. 打开项目根目录。
 2. 解释器选择 Python 3.10+。
-3. 安装 `requirements.txt`。
+3. 安装 `requirements.txt`，并执行 `pip install -e .`。
 4. 创建 `uvicorn app.mock_acn_agent:app --host 127.0.0.1 --port 9010` 配置。
 5. 创建 `examples/demo_identity_flow.py` 配置。
 6. 先启动 mock 服务，再启动示例或测试。
+7. 如果你修改了 `config/config.yaml`，在调试会话里直接调用 `sdk.reload_config()` 即可重新读取配置。
+
+如未执行 `pip install -e .`，则需要将项目根目录标记为 `Sources Root`。
 
 ## 4. Mock AcnAgent API
 

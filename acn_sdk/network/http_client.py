@@ -20,7 +20,8 @@ class HttpClient:
     def __init__(self, base_url: str, session: SupportsHttpPost | None = None) -> None:
         self.base_url = base_url.rstrip("/")
         self._logger = logging.getLogger(self.__class__.__name__)
-        self._session = session or httpx.Client(base_url=self.base_url, timeout=10.0)
+        # Local SDK-to-agent traffic should not inherit shell proxy settings.
+        self._session = session or httpx.Client(base_url=self.base_url, timeout=10.0, trust_env=False)
 
     def register_robot_info(self, payload: dict[str, Any]) -> dict[str, Any]:
         return self._post("/idm/v1/identity-applications", payload)

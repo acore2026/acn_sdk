@@ -9,6 +9,7 @@ ACN SDK 是运行在机器人端侧的 Python 组件，用于与核心网侧 `Ac
 - `acn_sdk/credential`：能力凭证签发
 - `acn_sdk/task`：任务管理
 - `acn_sdk/sdk.py`：主编排入口
+- `acn_sdk/config.py`：配置模型与默认值定义
 
 ## 项目结构
 
@@ -76,21 +77,30 @@ chmod +x scripts/start_sdk_demo.sh
 手工运行：
 
 ```bash
-python -m venv .venv
+python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
+pip install -e .
 uvicorn app.mock_acn_agent:app --host 127.0.0.1 --port 9010
-python examples/demo_identity_flow.py
+python3 examples/demo_identity_flow.py
 ```
+
+推荐启动顺序：
+
+1. 安装依赖并执行 `pip install -e .`
+2. 启动 `uvicorn app.mock_acn_agent:app --host 127.0.0.1 --port 9010`
+3. 运行 `python3 examples/demo_identity_flow.py` 或 `pytest`
 
 Windows + PyCharm：
 
 1. 使用 PyCharm 打开项目根目录 `/home/acn/zxy` 对应工程副本。
 2. 创建 Python 3.10+ 虚拟环境。
-3. 安装 `requirements.txt`。
+3. 安装 `requirements.txt`，并执行 `pip install -e .`。
 4. 新建 `uvicorn app.mock_acn_agent:app --host 127.0.0.1 --port 9010` 运行配置。
 5. 新建 `examples/demo_identity_flow.py` 运行配置。
 6. 先启动 mock 服务，再运行示例或测试。
+
+如果不做 `pip install -e .`，则需要把项目根目录标记为 `Sources Root`。
 
 示例导入方式：
 
@@ -104,12 +114,21 @@ sdk = AcnSDK(robot_name="AliceAgent")
 
 - SDK 自身端口：`http_port=8001`、`ws_port=8002`、`moq_pub_port=8003`、`moq_sub_port=8004`
 - 网端信息：`network_ip=127.0.0.1`、`acn_agent_port=9010`、`agent_gw_ws_port=9002`、`agent_gw_moq_port=9003`、`web_ui_port=9004`
+- `acn_sdk/config.py` 只提供配置模型和默认值，不是运行时入口
+- 运行时优先读取 `config/config.yaml`；修改后可在代码里调用 `sdk.reload_config()` 立即重载
 
 ## 测试
 
 ```bash
 pytest
 ```
+
+当前主流程已经通过本地自动化测试验证：
+
+- SDK 初始化时自动生成并保存 EC 公私钥
+- 身份注册会持久化 `agent_id` 和 `vc0`
+- 能力注册会生成多个能力 VC，并按 `vc_list` 发送到 `/arf/v1/agent-cards`
+- 去注册只清理身份状态，不删除本地密钥
 
 ## 文档
 

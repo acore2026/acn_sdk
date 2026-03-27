@@ -22,13 +22,14 @@ acn_sdk/
 ```
 
 - `AcnSDK`：主入口，编排身份申请、能力注册、查询、去注册、网络状态切换。
-- `identity/IdentityManager`：本地身份状态持久化，保存 `agent_id`、`vc0`、`capability_vc`、机器人基础信息。
+- `identity/IdentityManager`：本地身份状态持久化，保存 `agent_id`、`vc0`、`capability_vcs`、机器人基础信息。
 - `credential/CredentialIssuer`：模拟第三方能力凭证签发。
 - `network/HttpClient`：统一发送 HTTP 请求，记录请求与响应日志。
 - `network/WebSocketClient`：预留与 `AgentGW` 的长连接通信能力。
 - `network/MoQClient`：预留 track 发布/订阅封装。
 - `task/TaskManager`：统一管理后台任务生命周期。
-- `config`：统一配置核心网 IP、端口、存储路径与日志级别。
+- `config.py`：定义 `SDKConfig` / `NetworkConfig` / `StorageConfig` 数据模型与默认值。
+- `config/config.yaml`：运行时优先读取的配置文件，修改后可通过 `AcnSDK.reload_config()` 重新加载。
 - `mock_acn_agent`：FastAPI 打桩服务，用于测试和本地调试。
 
 ## 3. 核心流程时序图
@@ -53,8 +54,8 @@ sequenceDiagram
 
     Robot->>SDK: register_agent_attribute(capabilities)
     SDK->>Issuer: fetch_capacity_vc(agent_id, capabilities)
-    Issuer-->>SDK: capability_vc
-    SDK->>ID: 保存 capability_vc
+    Issuer-->>SDK: capability_vcs
+    SDK->>ID: 保存 capability_vcs
     SDK->>HTTP: POST /arf/v1/agent-cards
     HTTP->>Agent: 注册能力
     Agent-->>HTTP: success
@@ -88,7 +89,13 @@ flowchart LR
 
 状态切换均通过 `logging` 输出。
 
-## 6. 扩展设计
+## 6. 配置设计
+
+- `config.py` 只负责配置结构与默认值，不作为运行时配置入口。
+- `config/config.yaml` 是当前工程的运行时配置源。
+- 启动时优先读取 `config/config.yaml`，运行中需要热更新时调用 `AcnSDK.reload_config()`。
+
+## 7. 扩展设计
 
 - `HttpClient` 可替换为重试版、鉴权版、异步版。
 - `IdentityManager` 可扩展为 SQLite 或加密存储。

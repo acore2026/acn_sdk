@@ -9,9 +9,10 @@
 ## 2. 安装依赖
 
 ```bash
-python -m venv .venv
+python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
+pip install -e .
 ```
 
 Windows PowerShell:
@@ -20,6 +21,7 @@ Windows PowerShell:
 python -m venv .venv
 .venv\Scripts\Activate.ps1
 pip install -r requirements.txt
+pip install -e .
 ```
 
 ## 3. 启动 Mock AcnAgent
@@ -28,10 +30,12 @@ pip install -r requirements.txt
 uvicorn app.mock_acn_agent:app --host 127.0.0.1 --port 9010
 ```
 
+建议先启动 mock 服务，再运行 SDK 示例或测试，保证 `AcnSDK` 初始化时就能连接到 `/idm/v1/identity-applications`、`/arf/v1/agent-cards` 和 `/acn-agent/v1/agent-deletions`。
+
 ## 4. 运行示例
 
 ```bash
-python examples/demo_identity_flow.py
+python3 examples/demo_identity_flow.py
 ```
 
 示例中的 SDK 导入路径已经切换为：
@@ -53,7 +57,7 @@ chmod +x scripts/start_sdk_demo.sh
 
 1. 打开工程根目录。
 2. 配置项目解释器为 Python 3.10+。
-3. 安装 `requirements.txt`。
+3. 在项目解释器中安装 `requirements.txt`，并执行 `pip install -e .`。
 4. 增加 FastAPI mock 运行配置：
 
 ```text
@@ -68,6 +72,8 @@ Working directory: 项目根目录
 Script path: examples/demo_identity_flow.py
 Working directory: 项目根目录
 ```
+
+如未执行 `pip install -e .`，则需要把项目根目录标记为 `Sources Root`，否则 `from acn_sdk import ...` 无法导入。
 
 6. 调试顺序：
    先启动 mock AcnAgent，再启动示例或 `pytest`。
@@ -84,3 +90,21 @@ logs/acn_sdk.log
 
 - SDK 自身端口：`http_port=8001`、`ws_port=8002`、`moq_pub_port=8003`、`moq_sub_port=8004`
 - 网端信息：`network_ip=127.0.0.1`、`acn_agent_port=9010`、`agent_gw_ws_port=9002`、`agent_gw_moq_port=9003`、`web_ui_port=9004`
+- `config.py` 只提供模型默认值，运行时以 `config/config.yaml` 为准
+- 修改 YAML 后，如需让已启动的 SDK 立即生效，调用 `sdk.reload_config()`
+- 如需切换到其他环境，可直接修改 `config/config.yaml`，无需改动代码
+
+## 9. 当前功能校验
+
+当前实现已覆盖以下行为：
+
+- `AcnSDK` 初始化时自动检查本地公钥和私钥，不存在则生成并保存 EC P-256 密钥
+- `register_robot_info` 成功后保存 `agent_id` 和 `vc0`
+- `register_agent_attribute` 会生成全部能力 VC，并以 `vc_list=[vc0, *capability_vcs]` 的格式发送到 `/arf/v1/agent-cards`
+- `deregister_robot` 仅清理本地身份状态，不删除已生成的公钥和私钥
+
+本地验证命令：
+
+```bash
+pytest -q
+```
