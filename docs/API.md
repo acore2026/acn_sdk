@@ -56,7 +56,6 @@ POST /idm/v1/identity-applications
   "name": "AliceAgent",
   "public_key": "-----BEGIN PUBLIC KEY----- ...",
   "description": "AgentModel-X, SN123456",
-  "priority": 5,
   "timestamp": "2026-03-27T10:00:00Z",
   "signature": "base64-signature",
   "signature_encoding": "base64",
@@ -90,7 +89,7 @@ POST /arf/v1/agent-cards
 说明：
 
 - 原始需求中出现 `agent—cards`，其中连接符疑似排版字符；工程中统一采用标准路径 `/arf/v1/agent-cards`。
-- 当前请求体只包含 `agent_id`、`priority`、`timestamp`、`signature`、`signature_encoding`、`vc_list`
+- 当前请求体只包含 `agent_id`、`timestamp`、`signature`、`signature_encoding`、`vc_list`
 - `signature` 仅基于 `timestamp` 生成，编码采用 `base64`
 - `vc_list` 中第一个元素为 `vc0`，后续元素为全部能力 VC
 - 当前能力 VC 使用 `BindingSIMCredential`，签名按发放者私钥生成：华为发放者使用 `Huawei_private_key.pem`，RobotFactory 发放者使用 `Robot_Factory_private_key.pem`
@@ -100,7 +99,6 @@ POST /arf/v1/agent-cards
 ```json
 {
   "agent_id": "did:acn:agent:987654321",
-  "priority": 5,
   "timestamp": "2026-03-27T10:00:00Z",
   "signature": "base64-signature",
   "signature_encoding": "base64",

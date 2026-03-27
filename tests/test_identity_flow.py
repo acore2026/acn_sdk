@@ -68,6 +68,7 @@ def test_request_signatures_use_timestamp_only_and_agent_card_encoding_order(sdk
     deregister_response = sdk.deregister_robot(agent_id, "retired")
     deregister_request = sdk.http_client._session.requests[2][1]
 
+    assert "priority" not in identity_request
     assert identity_request["signature_encoding"] == "base64"
     assert agent_card_request["signature_encoding"] == "base64"
     assert deregister_request["signature_encoding"] == "base64"
@@ -217,6 +218,8 @@ def test_fetch_capacity_vc_uses_issuer_specific_private_key() -> None:
     agent_id = "did:acn:agent:987654321"
     huawei_issuer = CredentialIssuer()
     huawei_vc = huawei_issuer.fetch_capacity_vc(agent_id, ["pick"], "AliceAgent")[0]
+    assert huawei_vc["id"].startswith("huawei/credentials/")
+    assert len(huawei_vc["id"].rsplit("/", 1)[-1]) == 4
 
     assert huawei_vc["type"] == ["VerifiableCredential", "BindingSIMCredential"]
     assert huawei_vc["proof"]["creator"] == f"{huawei_issuer.issuer_id}#keys-1"

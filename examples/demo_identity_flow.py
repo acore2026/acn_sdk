@@ -8,7 +8,7 @@ def main() -> None:
 
     robot_info = RobotInfo(
         name="AliceAgent",
-        owner="+8613800138000",
+        owner="13800138000",
         description="AgentModel-X, SN123456",
         priority=5,
         metadata={"region": "CN", "os": "Linux", "version": "1.0.0"},
@@ -20,7 +20,7 @@ def main() -> None:
     capability_response = sdk.register_agent_attribute(["pick", "place", "navigate"])
     print(f"capability registration response={capability_response}")
 
-    query_result = sdk.query_robot_id("AliceAgent", "+8613800138000")
+    query_result = sdk.query_robot_id("AliceAgent", "13800138000")
     print(f"query result={query_result}")
 
     deregister_response = sdk.deregister_robot(agent_id, "retired")

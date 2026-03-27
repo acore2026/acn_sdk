@@ -20,7 +20,6 @@ class IdentityApplication(BaseModel):
     name: str
     public_key: str
     description: str
-    priority: int
     timestamp: str
     signature: str
     signature_encoding: str

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import secrets
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
@@ -34,7 +35,7 @@ class MockHttpSession:
                 "agent_id": f"did:acn:agent:{uuid4()}",
                 "vc0": {
                     "context": ["3gpp-ts-33.xxx-v20.0.0"],
-                    "id": f"CMCC/credentials/{uuid4()}",
+                    "id": f"CMCC/credentials/{secrets.randbelow(10000):04d}",
                     "type": ["VerifiableCredential", "BindingSIMCredential"],
                     "issuer": "did:udid:NewTypeOperator.rid678@6gc.mnc015.mcc234.3gppnetwork",
                     "valid_from": now.isoformat(),

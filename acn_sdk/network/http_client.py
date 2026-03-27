@@ -4,7 +4,7 @@ import logging
 from typing import Any, Protocol
 
 import httpx
-
+import json
 from ..models import AgentCardRequest, DeregisterRequest
 
 
@@ -34,10 +34,19 @@ class HttpClient:
 
     def _post(self, path: str, body: dict[str, Any]) -> dict[str, Any]:
         headers = {"Content-Type": "application/json"}
-        self._logger.info("HTTP POST %s%s body=%s", self.base_url, path, body)
+        self._logger.info(
+            "HTTP POST %s%s \nbody=%s",
+            self.base_url,
+            path,
+            json.dumps(body, indent=2, ensure_ascii=False)
+        )
         response = self._session.post(path, json=body, headers=headers)
         result = response.json()
-        self._logger.info("HTTP response %s: %s", path, result)
+        self._logger.info(
+            "HTTP response %s: \n%s",
+            path,
+            json.dumps(result, indent=2, ensure_ascii=False)
+        )
         if response.status_code >= 400:
             raise RuntimeError(f"HTTP request failed: {response.status_code}, {result}")
         return result

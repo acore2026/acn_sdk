@@ -3,10 +3,10 @@ from __future__ import annotations
 import base64
 import json
 import logging
+import secrets
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
-from uuid import uuid4
 
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec
@@ -49,9 +49,10 @@ class CredentialIssuer:
             credential_prefix = "robot_factory"
         vcs = []
         for capability in capabilities:
+            credential_suffix = f"{secrets.randbelow(10000):04d}"
             vc = {
                 "context": ["3gpp-ts-33.xxx-v20.0.0"],
-                "id": f"{credential_prefix}/credentials/{uuid4()}",
+                "id": f"{credential_prefix}/credentials/{credential_suffix}",
                 "type": ["VerifiableCredential", "BindingSIMCredential"],
                 "issuer": self.issuer_id,
                 "valid_from": now.isoformat(),

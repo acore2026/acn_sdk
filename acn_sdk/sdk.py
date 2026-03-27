@@ -73,7 +73,6 @@ class AcnSDK:
             "name": robot_info.name,
             "public_key": load_public_key_pem(self.config.storage.public_key_file),
             "description": robot_info.description,
-            "priority": robot_info.priority,
             "timestamp": timestamp,
             "metadata": robot_info.metadata,
         }
