@@ -1,0 +1,18 @@
+sdk:
+  http_port: 8001
+  ws_port: 8002
+  moq_pub_port: 8003
+  moq_sub_port: 8004
+network:
+  network_ip: 127.0.0.1
+  acn_agent_port: 9010
+  agent_gw_ws_port: 9002
+  agent_gw_moq_port: 9003
+  web_ui_port: 9004
+  path: /ws
+storage:
+  identity_file: data/identity.json
+  private_key_file: data/keys/private_key.pem
+  public_key_file: data/keys/public_key.pem
+  log_dir: logs
+log_level: INFO
