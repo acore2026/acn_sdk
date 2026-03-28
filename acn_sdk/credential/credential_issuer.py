@@ -36,8 +36,7 @@ def _resolve_issuer_profile(capability: str) -> tuple[str, Path, str]:
 
 
 class CredentialIssuer:
-    def __init__(self, issuer_id: str = HUAWEI_ISSUER_DID) -> None:
-        self.issuer_id = issuer_id
+    def __init__(self) -> None:
         self._logger = logging.getLogger(self.__class__.__name__)
 
     def fetch_capacity_vc(self, agent_id: str, capabilities: list[str], agent_name: str) -> list[dict[str, Any]]:

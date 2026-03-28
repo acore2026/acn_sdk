@@ -29,7 +29,7 @@ class AcnSDK:
         self.config_path = Path(config_path).expanduser().resolve() if config_path is not None else DEFAULT_CONFIG_PATH
         self.config = SDKConfig.load(self.config_path)
         self.robot_name = robot_name
-        self.credential_issuer = CredentialIssuer(issuer_id=issuer_id)
+        self.credential_issuer = CredentialIssuer()
         self.websocket_client: WebSocketClient | None = None
         self.moq_pub_client: MoQClient | None = None
         self.moq_sub_client: MoQClient | None = None
