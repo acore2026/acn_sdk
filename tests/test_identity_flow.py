@@ -39,7 +39,7 @@ def test_register_query_and_deregister_flow(sdk_environment: object) -> None:
     assert agent_id.startswith("did:acn:agent:")
     assert sdk.identity_manager.vc0 is not None
 
-    capability_response = sdk.register_agent_attribute(["pick", "place"])
+    capability_response = sdk.register_agent_attribute(agent_id, ["pick", "place"])
     assert capability_response["result"] == "success"
     assert len(sdk.identity_manager.capability_vcs) == 2
     assert capability_response["capabilities"] == ["pick", "place"]
@@ -66,7 +66,7 @@ def test_request_signatures_use_timestamp_only_and_agent_card_encoding_order(sdk
     agent_id = sdk.register_robot_info(robot_info)
     identity_request = sdk.http_client._session.requests[0][1]
 
-    capability_response = sdk.register_agent_attribute(["pick"])
+    capability_response = sdk.register_agent_attribute(agent_id, ["pick"])
     agent_card_request = sdk.http_client._session.requests[1][1]
 
     deregister_response = sdk.deregister_robot(agent_id, "retired")
@@ -84,6 +84,25 @@ def test_request_signatures_use_timestamp_only_and_agent_card_encoding_order(sdk
 
     assert capability_response["result"] == "success"
     assert deregister_response["result"] == "success"
+
+
+def test_register_agent_attribute_with_mismatched_agent_id_raises(sdk_environment: object) -> None:
+    sdk = create_sdk()
+    robot_info = RobotInfo(
+        name="AliceAgent",
+        owner="+8613800138000",
+        description="AgentModel-X, SN123456",
+        priority=5,
+        metadata={},
+    )
+    sdk.register_robot_info(robot_info)
+
+    try:
+        sdk.register_agent_attribute("did:acn:agent:other", ["pick"])
+    except ValueError as exc:
+        assert "does not match this device" in str(exc)
+    else:
+        raise AssertionError("Expected ValueError to be raised")
 
 
 def test_deregister_with_mismatched_agent_id_raises(sdk_environment: object) -> None:
@@ -233,7 +252,7 @@ def test_fetch_capacity_vc_uses_issuer_specific_private_key() -> None:
         Path("/home/acn/zxy/acn_sdk/credential/cert/Huawei_cert.crt"),
     )
 
-    robot_factory_issuer = CredentialIssuer(ROBOT_FACTORY_ISSUER_DID)
+    robot_factory_issuer = CredentialIssuer()
     robot_factory_vc = robot_factory_issuer.fetch_capacity_vc(agent_id, ["place"], "AliceAgent")[0]
 
     assert robot_factory_vc["type"] == ["VerifiableCredential", "BindingSIMCredential"]

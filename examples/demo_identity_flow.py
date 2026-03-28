@@ -18,7 +18,7 @@ def main() -> None:
     agent_id = sdk.register_robot_info(robot_info)
     print(f"registered agent_id={agent_id}")
 
-    capability_response = sdk.register_agent_attribute(["可疑人员识别", "目标跟踪", "声光驱离"])
+    capability_response = sdk.register_agent_attribute(agent_id, ["可疑人员识别", "目标跟踪", "声光驱离"])
     print(f"capability registration response={capability_response}")
 
     query_result = sdk.query_robot_id("AliceAgent", "13800138000")

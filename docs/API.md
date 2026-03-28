@@ -76,7 +76,7 @@ POST /idm/v1/identity-applications
 - `IdentityManager` 保存 `agent_id`、`vc0`、机器人信息
 - `signature` 仅基于 `timestamp` 生成，编码采用 `base64`
 
-### `register_agent_attribute(capability: list[str]) -> dict[str, Any]`
+### `register_agent_attribute(agent_id: str, capability: list[str]) -> dict[str, Any]`
 
 先由 `CredentialIssuer` 按 `capability` 列表逐项模拟签发能力 VC，再向 `AcnAgent` 注册能力信息。
 
@@ -89,7 +89,8 @@ POST /arf/v1/agent-cards
 说明：
 
 - 原始需求中出现 `agent—cards`，其中连接符疑似排版字符；工程中统一采用标准路径 `/arf/v1/agent-cards`。
-- 当前请求体只包含 `agent_id`、`timestamp`、`signature`、`signature_encoding`、`vc_list`
+- 调用前会校验传入的 `agent_id` 必须与本机已注册身份一致，否则直接抛出 `ValueError`
+- 当前请求体包含 `agent_id`、`timestamp`、`signature`、`signature_encoding`、`vc_list`
 - `signature` 仅基于 `timestamp` 生成，编码采用 `base64`
 - `vc_list` 中第一个元素为 `vc0`，后续元素为全部能力 VC
 - 当前能力 VC 使用 `BindingSIMCredential`，签名按能力名称自动分流：`可疑人员识别` 和 `目标跟踪` 使用华为发放者及 `Huawei_private_key.pem`，其他能力使用 RobotFactory 发放者及 `Robot_Factory_private_key.pem`

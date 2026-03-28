@@ -52,7 +52,7 @@ sequenceDiagram
     SDK->>ID: 保存 agent_id / vc0
     SDK-->>Robot: agent_id
 
-    Robot->>SDK: register_agent_attribute(capabilities)
+    Robot->>SDK: register_agent_attribute(agent_id, capabilities)
     SDK->>Issuer: fetch_capacity_vc(agent_id, capabilities)
     Issuer-->>SDK: capability_vcs
     SDK->>ID: 保存 capability_vcs

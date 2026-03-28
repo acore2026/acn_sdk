@@ -100,7 +100,7 @@ logs/acn_sdk.log
 
 - `AcnSDK` 初始化时自动检查本地公钥和私钥，不存在则生成并保存 EC P-256 密钥
 - `register_robot_info` 成功后保存 `agent_id` 和 `vc0`，请求体中的 `signature` 仅基于 `timestamp` 生成，编码采用 `base64`
-- `register_agent_attribute` 会生成全部能力 VC，并以 `vc_list=[vc0, *capability_vcs]` 的格式发送到 `/arf/v1/agent-cards`，请求体字段顺序为 `agent_id`、`timestamp`、`signature`、`signature_encoding`、`vc_list`
+- `register_agent_attribute(agent_id, capability)` 会先校验传入的 `agent_id` 与本机身份一致，再生成全部能力 VC，并以 `vc_list=[vc0, *capability_vcs]` 的格式发送到 `/arf/v1/agent-cards`，请求体字段顺序为 `agent_id`、`timestamp`、`signature`、`signature_encoding`、`vc_list`
 - `deregister_robot` 仅清理本地身份状态，不删除已生成的公钥和私钥，请求体中的 `signature` 仅基于 `timestamp` 生成，编码采用 `base64`
 
 本地验证命令：

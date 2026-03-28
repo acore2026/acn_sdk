@@ -93,12 +93,16 @@ class AcnSDK:
         self._logger.info("Robot registered. agent_id=%s response=%s", agent_id, response)
         return agent_id
 
-    def register_agent_attribute(self, capability: list[str]) -> dict[str, Any]:
+    def register_agent_attribute(self, agent_id: str, capability: list[str]) -> dict[str, Any]:
         if not self.identity_manager.agent_id or not self.identity_manager.vc0:
             raise RuntimeError("Robot identity must be registered before capabilities.")
+        if not agent_id:
+            raise ValueError("agent_id must not be empty.")
+        if agent_id != self.identity_manager.agent_id:
+            raise ValueError("The supplied agent_id does not match this device.")
 
         capability_vcs = self.credential_issuer.fetch_capacity_vc(
-            self.identity_manager.agent_id,
+            agent_id,
             capability,
             self.identity_manager.robot_name or self.robot_name,
         )
@@ -107,7 +111,7 @@ class AcnSDK:
 
         timestamp = self._utc_timestamp()
         payload = AgentCardRequest(
-            agent_id=self.identity_manager.agent_id,
+            agent_id=agent_id,
             priority=self.identity_manager.priority or 0,
             timestamp=timestamp,
             signature=sign_timestamp(self.config.storage.private_key_file, timestamp),
