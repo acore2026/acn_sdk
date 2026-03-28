@@ -42,7 +42,14 @@ def test_register_query_and_deregister_flow(sdk_environment: object) -> None:
     capability_response = sdk.register_agent_attribute(agent_id, ["pick", "place"])
     assert capability_response["result"] == "success"
     assert len(sdk.identity_manager.capability_vcs) == 2
+    assert sdk.identity_manager.capability_names == ["pick", "place"]
     assert capability_response["capabilities"] == ["pick", "place"]
+
+    capability_response = sdk.register_agent_attribute(agent_id, ["place", "move"])
+    assert capability_response["result"] == "success"
+    assert len(sdk.identity_manager.capability_vcs) == 3
+    assert sdk.identity_manager.capability_names == ["pick", "place", "move"]
+    assert capability_response["capabilities"] == ["pick", "place", "move"]
 
     query_result = sdk.query_robot_id("AliceAgent", "+8613800138000")
     assert query_result == agent_id
@@ -234,7 +241,35 @@ def test_identity_manager_loads_legacy_single_capability_vc(tmp_path: Path) -> N
     from acn_sdk.identity.identity_manager import IdentityManager
 
     manager = IdentityManager(str(identity_file))
+    assert manager.capability_names == []
     assert manager.capability_vcs == [{"id": "cap1"}]
+
+
+def test_identity_manager_extracts_capability_names_from_existing_vcs(tmp_path: Path) -> None:
+    identity_file = tmp_path / "identity.json"
+    identity_file.write_text(
+        '{"agent_id":"a1","vc0":{"id":"vc0"},"capability_vcs":[{"id":"cap1","claims":{"agent_attribute":"pick"}},{"id":"cap2","claims":{"agent_attribute":"place"}}],"robot_name":"AliceAgent","owner":"+8613800138000","priority":5,"metadata":{}}',
+        encoding="utf-8",
+    )
+
+    from acn_sdk.identity.identity_manager import IdentityManager
+
+    manager = IdentityManager(str(identity_file))
+    assert manager.capability_names == ["pick", "place"]
+    assert manager.get_pending_capabilities(["pick", "move"]) == ["move"]
+
+
+def test_identity_manager_get_pending_capabilities_deduplicates_input(tmp_path: Path) -> None:
+    identity_file = tmp_path / "identity.json"
+    identity_file.write_text(
+        '{"agent_id":"a1","vc0":{"id":"vc0"},"capability_names":["pick"],"robot_name":"AliceAgent","owner":"+8613800138000","priority":5,"metadata":{}}',
+        encoding="utf-8",
+    )
+
+    from acn_sdk.identity.identity_manager import IdentityManager
+
+    manager = IdentityManager(str(identity_file))
+    assert manager.get_pending_capabilities(["pick", "move", "move", "scan", "scan"]) == ["move", "scan"]
 
 
 def test_fetch_capacity_vc_uses_issuer_specific_private_key() -> None:

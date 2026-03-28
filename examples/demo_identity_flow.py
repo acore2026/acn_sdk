@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
-
+import sys
+sys.path.append('..')
 from acn_sdk import AcnSDK, RobotInfo
 
 
@@ -19,7 +20,10 @@ def main() -> None:
     print(f"registered agent_id={agent_id}")
 
     capability_response = sdk.register_agent_attribute(agent_id, ["可疑人员识别", "目标跟踪", "声光驱离"])
-    print(f"capability registration response={capability_response}")
+    print(f"first capability registration response={capability_response}")
+
+    capability_response = sdk.register_agent_attribute(agent_id, ["目标跟踪", "无人机侦测"])
+    print(f"second capability registration response={capability_response}")
 
     query_result = sdk.query_robot_id("AliceAgent", "13800138000")
     print(f"query result={query_result}")

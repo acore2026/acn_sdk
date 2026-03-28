@@ -101,13 +101,16 @@ class AcnSDK:
         if agent_id != self.identity_manager.agent_id:
             raise ValueError("The supplied agent_id does not match this device.")
 
-        capability_vcs = self.credential_issuer.fetch_capacity_vc(
-            agent_id,
-            capability,
-            self.identity_manager.robot_name or self.robot_name,
-        )
-        self.identity_manager.set_capability_vcs(capability_vcs)
-        vc_list = [self.identity_manager.vc0, *capability_vcs]
+        new_capabilities = self.identity_manager.get_pending_capabilities(capability)
+        if new_capabilities:
+            capability_vcs = self.credential_issuer.fetch_capacity_vc(
+                agent_id,
+                new_capabilities,
+                self.identity_manager.robot_name or self.robot_name,
+            )
+            self.identity_manager.set_capability_vcs(capability_vcs)
+
+        vc_list = [self.identity_manager.vc0, *self.identity_manager.capability_vcs]
 
         timestamp = self._utc_timestamp()
         payload = AgentCardRequest(
