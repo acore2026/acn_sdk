@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import tempfile
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 
 import httpx
@@ -35,6 +36,7 @@ def build_config(base_dir: Path, moq_pub_port: int, moq_sub_port: int, identity_
             "network": {
                 "network_ip": "127.0.0.1",
                 "acn_agent_port": 9010,
+                "arf_port": 9001,
                 "agent_gw_ws_port": 9002,
                 "agent_gw_moq_port": 9003,
                 "web_ui_port": 9004,
@@ -52,6 +54,10 @@ def build_config(base_dir: Path, moq_pub_port: int, moq_sub_port: int, identity_
     config_path = base_dir / identity_name / "config.yaml"
     config.save(config_path)
     return config_path
+
+
+def current_timestamp_bytes() -> bytes:
+    return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z").encode("utf-8")
 
 
 def main() -> None:
@@ -100,6 +106,9 @@ def main() -> None:
 
     task_id = initiator.request_task_execution(initiator_id, "可疑人员驱离")
     print(f"task_id={task_id}")
+    print(initiator.task_info_report(initiator_id, task_id, "Location", current_timestamp_bytes()))
+    time.sleep(0.2)
+
     print(initiator.request_task_collaboration(initiator_id, task_id, ["声光驱离"]))
 
     push_ws_message(
@@ -165,7 +174,7 @@ def main() -> None:
     collaborator.poll_network_message()
     time.sleep(0.2)
 
-    initiator.task_info_report(initiator_id, task_id, "Location", b"2026-03-30T00:00:00Z")
+    initiator.task_info_report(initiator_id, task_id, "Location", current_timestamp_bytes())
     collaborator.moq_sub_client.pump(1.0)
 
     collaborator.request_terminate_task(collaborator_id, task_id, "demo finished")

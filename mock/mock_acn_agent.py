@@ -29,14 +29,6 @@ class IdentityApplication(BaseModel):
 
 
 class AgentCard(BaseModel):
-    agent_id: str
-    priority: int
-    timestamp: str
-    signature: str
-    signature_encoding: str
-    vc_list: list[dict]
-
-
 class AgentDeletion(BaseModel):
     agent_id: str
     reason: str
@@ -58,13 +50,6 @@ class TaskTermination(BaseModel):
     reason: str
     timestamp: str
     force: bool = False
-
-
-class AgentDiscovery(BaseModel):
-    task_id: str
-    agent_id: str
-    required_capabilities: list[str]
-    timestamp: str
 
 
 @app.post("/idm/v1/identity-applications")
@@ -96,21 +81,6 @@ def create_identity_application(payload: IdentityApplication) -> dict:
     }
     logger.info("Responding identity application: %s", response)
     return response
-
-
-@app.post("/arf/v1/agent-cards")
-def create_agent_card(payload: AgentCard) -> dict:
-    logger.info("Received agent card registration: %s", payload.model_dump(mode="json"))
-    capabilities = [vc["claims"]["agent_attribute"] for vc in payload.vc_list[1:] if "claims" in vc and "agent_attribute" in vc["claims"]]
-    response = {
-        "result": "success",
-        "message": "Agent capability registered",
-        "agent_id": payload.agent_id,
-        "capabilities": capabilities,
-    }
-    logger.info("Responding agent card registration: %s", response)
-    return response
-
 
 @app.post("/acn-agent/v1/agent-deletions")
 def delete_agent(payload: AgentDeletion) -> dict:
@@ -152,22 +122,6 @@ def terminate_task_execution(payload: TaskTermination) -> dict:
     }
     logger.info("Responding task termination request: %s", response)
     return response
-
-
-@app.post("/arf/v1/agent-discoveries")
-def request_agent_discovery(payload: AgentDiscovery) -> dict:
-    logger.info("Received agent discovery request: %s", payload.model_dump(mode="json"))
-    response = {
-        "result": "success",
-        "message": "Agent discovery requested",
-        "agent_id": payload.agent_id,
-        "task_id": payload.task_id,
-        "required_capabilities": payload.required_capabilities,
-    }
-    logger.info("Responding agent discovery request: %s", response)
-    return response
-
-
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Start the mock ACN Agent service.")
     parser.add_argument("--host", default="127.0.0.1")

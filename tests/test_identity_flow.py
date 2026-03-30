@@ -193,6 +193,7 @@ def test_connect_network_uses_new_config_ports(sdk_environment: object) -> None:
     sdk = create_sdk()
 
     assert sdk.config.network.acn_agent_url == "http://127.0.0.1:9010"
+    assert sdk.config.network.arf_url == "http://127.0.0.1:9001"
 
     sdk.connect_network()
 
@@ -309,11 +310,58 @@ def test_request_task_execution_requires_online_state(sdk_environment: object) -
         raise AssertionError("Expected RuntimeError to be raised")
 
 
+def test_task_info_report_requires_join_network_for_moq_connections(sdk_environment: object) -> None:
+    sdk = create_sdk()
+    robot_info = RobotInfo(
+        name="AliceAgent",
+        owner="+8613800138000",
+        description="AgentModel-X, SN123456",
+        priority=5,
+        metadata={},
+    )
+    agent_id = sdk.register_agent_info(robot_info)
+    sdk.connect_network()
+
+    try:
+        sdk.task_info_report(agent_id, "task-12345", "Location", b"payload")
+    except RuntimeError as exc:
+        assert "not connected" in str(exc)
+    else:
+        raise AssertionError("Expected RuntimeError to be raised")
+    finally:
+        sdk.disconnect_all()
+
+
+def test_deregister_robot_sends_disconnection_when_online(sdk_environment: object) -> None:
+    sdk = create_sdk()
+    robot_info = RobotInfo(
+        name="AliceAgent",
+        owner="+8613800138000",
+        description="AgentModel-X, SN123456",
+        priority=5,
+        metadata={},
+    )
+    agent_id = sdk.register_agent_info(robot_info)
+    websocket_client = MockWebSocketClient(
+        [{"type": "SETUP", "timestamp": "2025-01-01T00:00:00Z", "payload": {"status": "OK"}}]
+    )
+    sdk._create_websocket_client = lambda: websocket_client
+    sdk._create_moq_client = lambda role, local_port: RecordingMoQClient("127.0.0.1", 9003, local_port, role)
+
+    sdk.join_network(agent_id)
+    response = sdk.deregister_robot(agent_id, "retired")
+
+    assert response["result"] == "success"
+    assert websocket_client.sent_messages[-1]["type"] == "DISCONNECTION"
+    assert sdk.network_status == "OFFLINE"
+
+
 def test_reload_config_reflects_yaml_changes(sdk_environment: object) -> None:
     config = sdk_environment
     sdk = create_sdk()
 
     config.network.acn_agent_port = 9110
+    config.network.arf_port = 9111
     config.network.agent_gw_ws_port = 9012
     config.storage.log_dir = str(Path(config.storage.identity_file).parent / "alt-logs")
     config_path = Path(config.storage.identity_file).parent / "config.yaml"
@@ -322,8 +370,10 @@ def test_reload_config_reflects_yaml_changes(sdk_environment: object) -> None:
     sdk.reload_config()
 
     assert sdk.config.network.acn_agent_port == 9110
+    assert sdk.config.network.arf_port == 9111
     assert sdk.config.network.agent_gw_ws_port == 9012
     assert sdk.http_client.base_url == "http://127.0.0.1:9110"
+    assert sdk.arf_http_client.base_url == "http://127.0.0.1:9111"
 
 
 def test_http_client_disables_env_proxy_inheritance() -> None:

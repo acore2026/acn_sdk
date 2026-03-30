@@ -88,6 +88,7 @@ source .venv/bin/activate
 pip install -r requirements.txt
 pip install -e .
 python3 mock/mock_acn_agent.py --host 127.0.0.1 --port 9010
+python3 mock/mock_arf.py --host 127.0.0.1 --port 9001
 python3 mock/mock_agent_gw.py --host 127.0.0.1 --port 9002
 python3 mock/mock_moq_relay.py --host 127.0.0.1 --port 9003 --cache-dir data/moq-relay-cache
 python3 examples/demo_identity_flow.py
@@ -98,9 +99,10 @@ python3 examples/demo_task_flow.py
 
 1. 安装依赖并执行 `pip install -e .`
 2. 启动 `python3 mock/mock_acn_agent.py --host 127.0.0.1 --port 9010`
-3. 启动 `python3 mock/mock_agent_gw.py --host 127.0.0.1 --port 9002`
-4. 启动 `python3 mock/mock_moq_relay.py --host 127.0.0.1 --port 9003 --cache-dir data/moq-relay-cache`
-5. 运行 `python3 examples/demo_identity_flow.py`、`python3 examples/demo_task_flow.py` 或 `pytest`
+3. 启动 `python3 mock/mock_arf.py --host 127.0.0.1 --port 9001`
+4. 启动 `python3 mock/mock_agent_gw.py --host 127.0.0.1 --port 9002`
+5. 启动 `python3 mock/mock_moq_relay.py --host 127.0.0.1 --port 9003 --cache-dir data/moq-relay-cache`
+6. 运行 `python3 examples/demo_identity_flow.py`、`python3 examples/demo_task_flow.py` 或 `pytest`
 
 Windows + PyCharm：
 
@@ -108,10 +110,11 @@ Windows + PyCharm：
 2. 创建 Python 3.10+ 虚拟环境。
 3. 安装 `requirements.txt`，并执行 `pip install -e .`。
 4. 新建 `python mock/mock_acn_agent.py --host 127.0.0.1 --port 9010` 运行配置。
-5. 新建 `python mock/mock_agent_gw.py --host 127.0.0.1 --port 9002` 运行配置。
-6. 新建 `python mock/mock_moq_relay.py --host 127.0.0.1 --port 9003 --cache-dir data/moq-relay-cache` 运行配置。
-7. 新建 `examples/demo_identity_flow.py` 和 `examples/demo_task_flow.py` 运行配置。
-8. 先启动三个 mock 服务，再运行示例或测试。
+5. 新建 `python mock/mock_arf.py --host 127.0.0.1 --port 9001` 运行配置。
+6. 新建 `python mock/mock_agent_gw.py --host 127.0.0.1 --port 9002` 运行配置。
+7. 新建 `python mock/mock_moq_relay.py --host 127.0.0.1 --port 9003 --cache-dir data/moq-relay-cache` 运行配置。
+8. 新建 `examples/demo_identity_flow.py` 和 `examples/demo_task_flow.py` 运行配置。
+9. 先启动四个 mock 服务，再运行示例或测试。
 
 `examples/demo_task_flow.py` 当前会启动两个 SDK 实例：
 

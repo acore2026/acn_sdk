@@ -2,7 +2,7 @@
 
 ## 1. 总体说明
 
-本工程只实现机器人端 `AcnSDK`，通过 HTTP 与核心网侧 `AcnAgent` 通信，通过 WebSocket 与 `AgentGW` 交互，通过 MOQ 与 relay 传输任务数据；当前工程提供 `mock_acn_agent`、`mock_agent_gw`、`mock_moq_relay` 三个本地测试桩，便于联调注册、入网、任务协同和对象转发链路。
+本工程只实现机器人端 `AcnSDK`，通过 HTTP 与核心网侧 `AcnAgent` 和 `ARF` 通信，通过 WebSocket 与 `AgentGW` 交互，通过 MOQ 与 relay 传输任务数据；当前工程提供 `mock_acn_agent`、`mock_arf`、`mock_agent_gw`、`mock_moq_relay` 四个本地测试桩，便于联调注册、入网、任务协同和对象转发链路。
 
 ## 2. 模块划分
 
@@ -30,7 +30,8 @@ acn_sdk/
 - `task/TaskManager`：统一管理后台任务生命周期。
 - `config.py`：定义 `SDKConfig` / `NetworkConfig` / `StorageConfig` 数据模型与默认值。
 - `config/config.yaml`：运行时优先读取的配置文件，修改后可通过 `AcnSDK.reload_config()` 重新加载。
-- `mock_acn_agent`：FastAPI 打桩服务，用于测试和本地调试。
+- `mock_acn_agent`：FastAPI 打桩服务，承载身份注册、任务执行、终止任务和去注册接口。
+- `mock_arf`：FastAPI 打桩服务，承载能力注册和协同发现接口。
 
 ## 3. 核心流程时序图
 
@@ -41,6 +42,7 @@ sequenceDiagram
     participant ID as IdentityManager
     participant HTTP as HttpClient
     participant Agent as Mock AcnAgent
+    participant ARF as Mock ARF
     participant GW as Mock AgentGW
     participant Relay as Mock MOQ Relay
     participant Issuer as CredentialIssuer
@@ -59,8 +61,8 @@ sequenceDiagram
     Issuer-->>SDK: capability_vcs
     SDK->>ID: 保存 capability_vcs
     SDK->>HTTP: POST /arf/v1/agent-cards
-    HTTP->>Agent: 注册能力
-    Agent-->>HTTP: success
+    HTTP->>ARF: 注册能力
+    ARF-->>HTTP: success
     HTTP-->>SDK: success
 
     Robot->>SDK: join_network(agent_id)

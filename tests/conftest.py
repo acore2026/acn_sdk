@@ -128,6 +128,7 @@ def sdk_environment(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> SDKConfi
             "network": {
                 "network_ip": "127.0.0.1",
                 "acn_agent_port": 9010,
+                "arf_port": 9001,
                 "agent_gw_ws_port": 9002,
                 "agent_gw_moq_port": 9003,
                 "web_ui_port": 9004,

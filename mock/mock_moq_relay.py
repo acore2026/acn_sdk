@@ -3,11 +3,10 @@ from __future__ import annotations
 import argparse
 import asyncio
 import logging
-import signal
 from pathlib import Path
 
 from acn_sdk.logging_config import setup_logging
-from moq.relay import MOQRelay
+from moq import MOQRelay
 
 
 def parse_args() -> argparse.Namespace:
@@ -25,27 +24,25 @@ async def async_main() -> None:
 
     setup_logging()
     logger = logging.getLogger("mock_moq_relay")
-    relay = MOQRelay(host=args.host, port=args.port, cache_dir=str(cache_dir))
-    stop_event = asyncio.Event()
-
-    def _request_stop() -> None:
-        logger.info("Stop signal received, shutting down MOQ relay.")
-        stop_event.set()
-
-    loop = asyncio.get_running_loop()
-    for sig in (signal.SIGINT, signal.SIGTERM):
-        try:
-            loop.add_signal_handler(sig, _request_stop)
-        except NotImplementedError:
-            signal.signal(sig, lambda *_: _request_stop())
+    relay = MOQRelay(
+        host=args.host,
+        port=args.port,
+        cache_dir=str(cache_dir),
+        max_memory_cache=100 * 1024 * 1024,
+        max_disk_cache=1024 * 1024 * 1024,
+    )
 
     logger.info("Starting MOQ relay host=%s port=%s cache_dir=%s", args.host, args.port, cache_dir)
-    await relay.start()
     try:
-        await stop_event.wait()
+        await relay.start()
+        logger.info("MOQ relay started")
+        while True:
+            await asyncio.sleep(1)
+    except KeyboardInterrupt:
+        logger.info("MOQ relay stopped by user")
     finally:
         await relay.stop()
-        logger.info("MOQ relay stopped.")
+        logger.info("MOQ relay shutdown complete")
 
 
 def main() -> None:

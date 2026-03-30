@@ -43,6 +43,8 @@ class AcnSDK:
         self.issuer_id = issuer_id
         self.on_message_received = on_message_received
         self.credential_issuer = CredentialIssuer()
+        self.http_client: HttpClient | None = None
+        self.arf_http_client: HttpClient | None = None
         self.websocket_client: WebSocketClient | None = None
         self.moq_pub_client: MoQClient | None = None
         self.moq_sub_client: MoQClient | None = None
@@ -55,12 +57,13 @@ class AcnSDK:
         self._apply_config()
         self._logger.info("AcnSDK initialized for robot=%s, network_status=%s", robot_name, self.network_status)
         self._logger.info(
-            "SDK local ports http=%s ws=%s moq_pub=%s moq_sub=%s, network acn_agent=%s ws=%s moq=%s web_ui=%s",
+            "SDK local ports http=%s ws=%s moq_pub=%s moq_sub=%s, network acn_agent=%s arf=%s ws=%s moq=%s web_ui=%s",
             self.config.sdk.http_port,
             self.config.sdk.ws_port,
             self.config.sdk.moq_pub_port,
             self.config.sdk.moq_sub_port,
             self.config.network.acn_agent_port,
+            self.config.network.arf_port,
             self.config.network.agent_gw_ws_port,
             self.config.network.agent_gw_moq_port,
             self.config.network.web_ui_port,
@@ -109,7 +112,7 @@ class AcnSDK:
         self._logger.info("Robot registered. agent_id=%s response=%s", agent_id, response)
         return agent_id
 
-    def register_agent_attribute(self, agent_id: str, capability: list[str]) -> dict[str, Any]:
+    def register_agent_attribute(self, agent_id: str, capability: list[str] | str) -> dict[str, Any]:
         if not self.identity_manager.agent_id or not self.identity_manager.vc0:
             raise RuntimeError("Robot identity must be registered before capabilities.")
         if not agent_id:
@@ -117,7 +120,8 @@ class AcnSDK:
         if agent_id != self.identity_manager.agent_id:
             raise ValueError("The supplied agent_id does not match this device.")
 
-        new_capabilities = self.identity_manager.get_pending_capabilities(capability)
+        capability_list = [capability] if isinstance(capability, str) else capability
+        new_capabilities = self.identity_manager.get_pending_capabilities(capability_list)
         if new_capabilities:
             capability_vcs = self.credential_issuer.fetch_capacity_vc(
                 agent_id,
@@ -136,7 +140,9 @@ class AcnSDK:
             signature=sign_timestamp(self.config.storage.private_key_file, timestamp),
             vc_list=vc_list,
         )
-        response = self.http_client.register_agent_attribute(payload)
+        if self.arf_http_client is None:
+            raise RuntimeError("ARF HTTP client is not initialized.")
+        response = self.arf_http_client.register_agent_attribute(payload)
         self._logger.info("Robot attribute registered. response=%s", response)
         return response
 
@@ -163,6 +169,13 @@ class AcnSDK:
         )
         response = self.http_client.deregister_robot(request)
 
+        if self.network_status == "ONLINE" and self.websocket_client is not None:
+            self.websocket_client.send_json(
+                self._build_ws_message(
+                    "DISCONNECTION",
+                    {"src_agent_id": agent_id},
+                )
+            )
         self.identity_manager.clear()
         self.disconnect_all()
         self._logger.info("Robot deregistered. response=%s", response)
@@ -257,7 +270,7 @@ class AcnSDK:
         track_key = self._track_key(namespace, topic)
 
         if self.moq_pub_client is None:
-            raise RuntimeError("MoQ publisher is not connected.")
+            raise RuntimeError("MoQ publisher is not connected. Call join_network() first.")
 
         if track_key not in self._published_tracks:
             self.moq_pub_client.publish(namespace, topic)
@@ -299,7 +312,9 @@ class AcnSDK:
             required_capabilities=capability_list,
             timestamp=self._utc_timestamp(),
         )
-        response = self.http_client.request_task_collaboration(request)
+        if self.arf_http_client is None:
+            raise RuntimeError("ARF HTTP client is not initialized.")
+        response = self.arf_http_client.request_task_collaboration(request)
         self._logger.info("Task collaboration requested. task_id=%s response=%s", task_id, response)
         return response
 
@@ -377,7 +392,10 @@ class AcnSDK:
 
     def disconnect_all(self, close_http: bool = True) -> None:
         if close_http:
-            self.http_client.close()
+            if self.http_client is not None:
+                self.http_client.close()
+            if self.arf_http_client is not None:
+                self.arf_http_client.close()
         if self.websocket_client is not None:
             self.websocket_client.disconnect()
             self.websocket_client = None
@@ -400,6 +418,7 @@ class AcnSDK:
         self._logger = logging.getLogger(self.__class__.__name__)
         self.identity_manager = IdentityManager(self.config.storage.identity_file)
         self.http_client = HttpClient(self.config.network.acn_agent_url)
+        self.arf_http_client = HttpClient(self.config.network.arf_url)
         ensure_ec_keypair(
             self.config.storage.private_key_file,
             self.config.storage.public_key_file,
@@ -423,7 +442,7 @@ class AcnSDK:
 
     def _handle_subscribe_track(self, payload: dict[str, Any]) -> None:
         if self.moq_sub_client is None:
-            raise RuntimeError("MoQ subscriber is not connected.")
+            raise RuntimeError("MoQ subscriber is not connected. Call join_network() first.")
         for track_info in payload.get("track_list", []):
             namespace = track_info["namespace"]
             track = track_info["track"]

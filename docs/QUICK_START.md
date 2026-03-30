@@ -24,15 +24,16 @@ pip install -r requirements.txt
 pip install -e .
 ```
 
-## 3. 启动 Mock AcnAgent、Mock AgentGW 与 Mock MOQ Relay
+## 3. 启动 Mock AcnAgent、Mock ARF、Mock AgentGW 与 Mock MOQ Relay
 
 ```bash
 python3 mock/mock_acn_agent.py --host 127.0.0.1 --port 9010
+python3 mock/mock_arf.py --host 127.0.0.1 --port 9001
 python3 mock/mock_agent_gw.py --host 127.0.0.1 --port 9002
 python3 mock/mock_moq_relay.py --host 127.0.0.1 --port 9003 --cache-dir data/moq-relay-cache
 ```
 
-建议先启动三个 mock 服务，再运行 SDK 示例或测试，保证 `AcnSDK` 初始化后既能访问 HTTP 接口，也能和 `ws://127.0.0.1:9002/ws` 完成入网握手，并通过真实 `MOQ Relay` 完成 track 发布与订阅。
+建议先启动四个 mock 服务，再运行 SDK 示例或测试，保证 `AcnSDK` 初始化后既能访问 `ACN Agent` / `ARF` HTTP 接口，也能和 `ws://127.0.0.1:9002/ws` 完成入网握手，并通过真实 `MOQ Relay` 完成 track 发布与订阅。
 
 ## 4. 运行示例
 
@@ -71,9 +72,14 @@ chmod +x scripts/start_sdk_demo.sh
 4. 增加 FastAPI mock 运行配置：
 
 ```text
-Script: uvicorn
 Script path: mock/mock_acn_agent.py
 Parameters: --host 127.0.0.1 --port 9010
+Working directory: 项目根目录
+```
+
+```text
+Script path: mock/mock_arf.py
+Parameters: --host 127.0.0.1 --port 9001
 Working directory: 项目根目录
 ```
 
@@ -104,7 +110,7 @@ Working directory: 项目根目录
 如未执行 `pip install -e .`，则需要把项目根目录标记为 `Sources Root`，否则 `from acn_sdk import ...` 无法导入。
 
 6. 调试顺序：
-   先启动 mock AcnAgent、mock AgentGW、mock MOQ Relay，再启动示例或 `pytest`。
+   先启动 mock AcnAgent、mock ARF、mock AgentGW、mock MOQ Relay，再启动示例或 `pytest`。
 
 7. 如需观察日志，默认输出文件为：
 

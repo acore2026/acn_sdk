@@ -319,6 +319,7 @@ source .venv/bin/activate
 pip install -r requirements.txt
 pip install -e .
 python3 mock/mock_acn_agent.py --host 127.0.0.1 --port 9010
+python3 mock/mock_arf.py --host 127.0.0.1 --port 9001
 python3 mock/mock_agent_gw.py --host 127.0.0.1 --port 9002
 python3 mock/mock_moq_relay.py --host 127.0.0.1 --port 9003 --cache-dir data/moq-relay-cache
 python3 examples/demo_identity_flow.py
@@ -331,11 +332,12 @@ pytest
 1. `pip install -r requirements.txt`
 2. `pip install -e .`
 3. `python3 mock/mock_acn_agent.py --host 127.0.0.1 --port 9010`
-4. `python3 mock/mock_agent_gw.py --host 127.0.0.1 --port 9002`
-5. `python3 mock/mock_moq_relay.py --host 127.0.0.1 --port 9003 --cache-dir data/moq-relay-cache`
-6. `python3 examples/demo_identity_flow.py`
-7. `python3 examples/demo_task_flow.py`
-8. `pytest -q`
+4. `python3 mock/mock_arf.py --host 127.0.0.1 --port 9001`
+5. `python3 mock/mock_agent_gw.py --host 127.0.0.1 --port 9002`
+6. `python3 mock/mock_moq_relay.py --host 127.0.0.1 --port 9003 --cache-dir data/moq-relay-cache`
+7. `python3 examples/demo_identity_flow.py`
+8. `python3 examples/demo_task_flow.py`
+9. `pytest -q`
 
 `demo_task_flow.py` 的当前校验目标：
 

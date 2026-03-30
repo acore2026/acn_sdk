@@ -5,9 +5,7 @@ import logging
 from collections import defaultdict
 from typing import Any, Callable, Coroutine
 
-from moq.encoding import FullTrackName
-from moq.pub import MOQPublisher, PublishedObject
-from moq.sub import MOQSubscriber, ReceivedObject
+from moq import FullTrackName, MOQPublisher, MOQSubscriber, PublishedObject, ReceivedObject
 
 
 class MoQClient:
@@ -26,7 +24,9 @@ class MoQClient:
         self.on_object_received = on_object_received
         self._logger = logging.getLogger(self.__class__.__name__)
         self._subscriptions: dict[str, list[str]] = defaultdict(list)
+        self._subscription_tracks: dict[str, FullTrackName] = {}
         self._published_tracks: set[str] = set()
+        self._publication_tracks: dict[str, FullTrackName] = {}
         self._object_counters: dict[str, int] = defaultdict(int)
         self._connected = False
         self._loop: asyncio.AbstractEventLoop | None = None
@@ -45,10 +45,30 @@ class MoQClient:
         self._loop = asyncio.new_event_loop()
         if self.role == "publisher":
             self._publisher = MOQPublisher(self.host, self.remote_port)
+            self._publisher.set_handlers(
+                on_connected=lambda: self._logger.info("MoQ publisher connected to relay"),
+                on_disconnected=lambda: self._logger.info("MoQ publisher disconnected from relay"),
+                on_publication_accepted=lambda track_name: self._logger.info("MoQ publication accepted track=%s", track_name),
+                on_publication_rejected=lambda track_name, reason: self._logger.warning(
+                    "MoQ publication rejected track=%s reason=%s",
+                    track_name,
+                    reason,
+                ),
+            )
             connected = self._run_async(self._publisher.connect())
         elif self.role == "subscriber":
             self._subscriber = MOQSubscriber(self.host, self.remote_port)
-            self._subscriber.set_handlers(on_object_received=self._handle_received_object)
+            self._subscriber.set_handlers(
+                on_connected=lambda: self._logger.info("MoQ subscriber connected to relay"),
+                on_disconnected=lambda: self._logger.info("MoQ subscriber disconnected from relay"),
+                on_object_received=self._handle_received_object,
+                on_subscription_accepted=lambda track_name: self._logger.info("MoQ subscription accepted track=%s", track_name),
+                on_subscription_rejected=lambda track_name, reason: self._logger.warning(
+                    "MoQ subscription rejected track=%s reason=%s",
+                    track_name,
+                    reason,
+                ),
+            )
             connected = self._run_async(self._subscriber.connect())
         else:
             raise ValueError(f"Unsupported MoQ role: {self.role}")
@@ -72,7 +92,9 @@ class MoQClient:
         published = self._run_async(self._publisher.publish(full_track_name))
         if not published:
             raise RuntimeError(f"Failed to publish track: {self._track_key(namespace, track)}")
-        self._published_tracks.add(self._track_key(namespace, track))
+        track_key = self._track_key(namespace, track)
+        self._published_tracks.add(track_key)
+        self._publication_tracks[track_key] = full_track_name
         self._logger.info("MoQ publish namespace=%s track=%s", namespace, track)
 
     def send_object(self, namespace: str, track: str, payload: bytes) -> None:
@@ -105,7 +127,9 @@ class MoQClient:
         subscribed = self._run_async(self._subscriber.subscribe(full_track_name))
         if not subscribed:
             raise RuntimeError(f"Failed to subscribe track: {self._track_key(namespace, track)}")
-        self._subscriptions[self._track_key(namespace, track)].append(subscriber_id)
+        track_key = self._track_key(namespace, track)
+        self._subscriptions[track_key].append(subscriber_id)
+        self._subscription_tracks[track_key] = full_track_name
         self._logger.info(
             "MoQ subscribe namespace=%s track=%s subscriber=%s",
             namespace,
@@ -188,6 +212,11 @@ class MoQClient:
 
     async def _shutdown_clients(self) -> None:
         if self._publisher is not None:
+            for track_key, full_track_name in list(self._publication_tracks.items()):
+                try:
+                    await self._publisher.unpublish(full_track_name)
+                except Exception as exc:
+                    self._logger.warning("Failed to unpublish track=%s error=%s", track_key, exc)
             publisher_session = getattr(self._publisher, "_session", None)
             if publisher_session is not None:
                 publisher_session.close()
@@ -199,6 +228,11 @@ class MoQClient:
             elif hasattr(self._publisher, "disconnect"):
                 self._publisher.disconnect()
         if self._subscriber is not None:
+            for track_key, full_track_name in list(self._subscription_tracks.items()):
+                try:
+                    await self._subscriber.unsubscribe(full_track_name)
+                except Exception as exc:
+                    self._logger.warning("Failed to unsubscribe track=%s error=%s", track_key, exc)
             object_task = getattr(self._subscriber, "_object_task", None)
             if object_task is not None:
                 object_task.cancel()
@@ -214,6 +248,8 @@ class MoQClient:
                 self._subscriber._client = None
             elif hasattr(self._subscriber, "disconnect"):
                 self._subscriber.disconnect()
+        self._publication_tracks.clear()
+        self._subscription_tracks.clear()
 
     @staticmethod
     def _build_full_track_name(namespace: str, track: str) -> FullTrackName:
