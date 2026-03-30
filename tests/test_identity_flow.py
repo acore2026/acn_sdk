@@ -19,6 +19,64 @@ from acn_sdk.models import RobotInfo
 from acn_sdk.crypto import ensure_ec_keypair, sign_payload
 from acn_sdk.network.http_client import HttpClient
 from acn_sdk.sdk import AcnSDK
+from acn_sdk.network.moq_client import MoQClient
+
+
+class MockWebSocketClient:
+    def __init__(self, response_messages: list[dict[str, object]] | None = None) -> None:
+        self.url = "ws://127.0.0.1:9002/ws"
+        self.connected = False
+        self.sent_messages: list[dict[str, object]] = []
+        self._responses = list(response_messages or [])
+
+    def connect(self) -> None:
+        self.connected = True
+
+    def send_json(self, payload: dict[str, object]) -> None:
+        self.sent_messages.append(payload)
+
+    def receive_json(self) -> dict[str, object]:
+        if not self._responses:
+            raise RuntimeError("No mock websocket message available")
+        return self._responses.pop(0)
+
+    def disconnect(self) -> None:
+        self.connected = False
+
+class RecordingMoQClient(MoQClient):
+    def __init__(self, host: str, remote_port: int, local_port: int, role: str, on_object_received=None) -> None:
+        self.host = host
+        self.remote_port = remote_port
+        self.local_port = local_port
+        self.role = role
+        self.on_object_received = on_object_received
+        self.connected = False
+        self.published: list[tuple[str, str]] = []
+        self.sent_objects: list[tuple[str, str, bytes]] = []
+        self.subscribed: list[tuple[str, str, str]] = []
+        self._published_tracks: set[str] = set()
+        self._subscriptions: dict[str, list[str]] = {}
+
+    def connect(self) -> None:
+        self.connected = True
+
+    def publish(self, namespace: str, track: str) -> None:
+        self.published.append((namespace, track))
+        self._published_tracks.add(f"{namespace}::{track}")
+
+    def send_object(self, namespace: str, track: str, payload: bytes) -> None:
+        self.sent_objects.append((namespace, track, payload))
+
+    def subscribe(self, namespace: str, track: str, subscriber_id: str) -> None:
+        self.subscribed.append((namespace, track, subscriber_id))
+        self._subscriptions.setdefault(f"{namespace}::{track}", []).append(subscriber_id)
+
+    def disconnect(self) -> None:
+        self.connected = False
+
+    def simulate_incoming_object(self, namespace: str, track: str, payload: bytes) -> None:
+        if self.on_object_received is not None:
+            self.on_object_received(namespace, track, payload)
 
 
 def create_sdk() -> AcnSDK:
@@ -35,7 +93,7 @@ def test_register_query_and_deregister_flow(sdk_environment: object) -> None:
         metadata={"region": "CN", "os": "Linux", "version": "1.0.0"},
     )
 
-    agent_id = sdk.register_robot_info(robot_info)
+    agent_id = sdk.register_agent_info(robot_info)
     assert agent_id.startswith("did:acn:agent:")
     assert sdk.identity_manager.vc0 is not None
 
@@ -70,7 +128,7 @@ def test_request_signatures_use_timestamp_only_and_agent_card_encoding_order(sdk
         metadata={"region": "CN"},
     )
 
-    agent_id = sdk.register_robot_info(robot_info)
+    agent_id = sdk.register_agent_info(robot_info)
     identity_request = sdk.http_client._session.requests[0][1]
 
     capability_response = sdk.register_agent_attribute(agent_id, ["pick"])
@@ -102,7 +160,7 @@ def test_register_agent_attribute_with_mismatched_agent_id_raises(sdk_environmen
         priority=5,
         metadata={},
     )
-    sdk.register_robot_info(robot_info)
+    sdk.register_agent_info(robot_info)
 
     try:
         sdk.register_agent_attribute("did:acn:agent:other", ["pick"])
@@ -121,7 +179,7 @@ def test_deregister_with_mismatched_agent_id_raises(sdk_environment: object) -> 
         priority=5,
         metadata={},
     )
-    sdk.register_robot_info(robot_info)
+    sdk.register_agent_info(robot_info)
 
     try:
         sdk.deregister_robot("did:acn:agent:other", "retired")
@@ -154,6 +212,101 @@ def test_connect_network_uses_new_config_ports(sdk_environment: object) -> None:
 
     sdk.disconnect_all()
     assert sdk.network_status == "OFFLINE"
+
+
+def test_join_network_and_task_flow(sdk_environment: object) -> None:
+    messages: list[tuple[str, dict[str, object]]] = []
+    sdk = AcnSDK(robot_name="AliceAgent", on_message_received=lambda msg_type, payload: messages.append((msg_type, payload)))
+    robot_info = RobotInfo(
+        name="AliceAgent",
+        owner="+8613800138000",
+        description="AgentModel-X, SN123456",
+        priority=5,
+        metadata={},
+    )
+    agent_id = sdk.register_agent_info(robot_info)
+
+    websocket_client = MockWebSocketClient(
+        [{"type": "SETUP", "timestamp": "2025-01-01T00:00:00Z", "payload": {"status": "OK"}}]
+    )
+    moq_clients: dict[str, RecordingMoQClient] = {}
+    sdk._create_websocket_client = lambda: websocket_client
+
+    def create_moq_client(role: str, local_port: int) -> RecordingMoQClient:
+        client = RecordingMoQClient("127.0.0.1", 9003, local_port, role, on_object_received=sdk._handle_moq_object_received if role == "subscriber" else None)
+        moq_clients[role] = client
+        return client
+
+    sdk._create_moq_client = create_moq_client
+
+    join_response = sdk.join_network(agent_id)
+    assert join_response["result"] == "success"
+    assert sdk.network_status == "ONLINE"
+    assert websocket_client.sent_messages[0]["type"] == "SETUP"
+
+    task_id = sdk.request_task_execution(agent_id, "可疑人员驱离")
+    assert task_id.startswith("task-")
+
+    report_response = sdk.task_info_report(agent_id, task_id, "Location", b"payload")
+    assert report_response["result"] == "success"
+    assert moq_clients["publisher"].published == [(f"/{task_id}/{agent_id}", "Location")]
+    assert moq_clients["publisher"].sent_objects == [(f"/{task_id}/{agent_id}", "Location", b"payload")]
+    assert websocket_client.sent_messages[1]["type"] == "PUBLISH_TRACK"
+
+    collaboration_response = sdk.request_task_collaboration(agent_id, task_id, ["speaker", "light"])
+    assert collaboration_response["result"] == "success"
+
+    accept_response = sdk.accept_task_collaboration(agent_id, task_id)
+    assert accept_response["result"] == "success"
+    assert websocket_client.sent_messages[-1]["type"] == "TASK_ACCEPT_COLLABORATION"
+
+    start_response = sdk.start_task(agent_id, "did:acn:agent:peer-1", task_id, "协同声光驱离")
+    assert start_response["result"] == "success"
+    assert websocket_client.sent_messages[-1]["type"] == "START_TASK"
+
+    termination_response = sdk.request_terminate_task(agent_id, task_id, "completed", force=False)
+    assert termination_response["result"] == "success"
+
+    sdk.handle_network_message(
+        {
+            "type": "SUBSCRIBE_TRACK",
+            "timestamp": "2025-01-01T00:00:00Z",
+            "payload": {
+                "src_agent_id": agent_id,
+                "task_id": task_id,
+                "track_list": [{"namespace": f"/{task_id}/{agent_id}", "track": "Location"}],
+            },
+        }
+    )
+    assert moq_clients["subscriber"].subscribed == [(f"/{task_id}/{agent_id}", "Location", agent_id)]
+
+    moq_clients["subscriber"].simulate_incoming_object(f"/{task_id}/{agent_id}", "Location", b"remote-payload")
+    assert messages[-1][0] == "MOQ_OBJECT"
+    assert messages[-1][1]["track"] == "Location"
+
+    logout_response = sdk.logout_network(agent_id)
+    assert logout_response["result"] == "success"
+    assert sdk.network_status == "OFFLINE"
+    assert websocket_client.sent_messages[-1]["type"] == "DISCONNECTION"
+
+
+def test_request_task_execution_requires_online_state(sdk_environment: object) -> None:
+    sdk = create_sdk()
+    robot_info = RobotInfo(
+        name="AliceAgent",
+        owner="+8613800138000",
+        description="AgentModel-X, SN123456",
+        priority=5,
+        metadata={},
+    )
+    agent_id = sdk.register_agent_info(robot_info)
+
+    try:
+        sdk.request_task_execution(agent_id, "offline task")
+    except RuntimeError as exc:
+        assert "online" in str(exc)
+    else:
+        raise AssertionError("Expected RuntimeError to be raised")
 
 
 def test_reload_config_reflects_yaml_changes(sdk_environment: object) -> None:

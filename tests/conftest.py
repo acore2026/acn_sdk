@@ -78,6 +78,37 @@ class MockHttpSession:
             }
             return MockResponse(200, payload)
 
+        if url == "/acn-agent/v1/task-executions":
+            payload = {
+                "result": "success",
+                "message": "Task execution requested",
+                "agent_id": json["agent_id"],
+                "task_id": json["task_id"],
+                "description": json["description"],
+            }
+            return MockResponse(200, payload)
+
+        if url == "/acn-agent/v1/task-execution-terminations":
+            payload = {
+                "result": "success",
+                "message": "Task termination requested",
+                "agent_id": json["agent_id"],
+                "task_id": json["task_id"],
+                "reason": json["reason"],
+                "force": json["force"],
+            }
+            return MockResponse(200, payload)
+
+        if url == "/arf/v1/agent-discoveries":
+            payload = {
+                "result": "success",
+                "message": "Agent discovery requested",
+                "agent_id": json["agent_id"],
+                "task_id": json["task_id"],
+                "required_capabilities": json["required_capabilities"],
+            }
+            return MockResponse(200, payload)
+
         return MockResponse(404, {"result": "error", "message": "unknown path"})
 
     def close(self) -> None:

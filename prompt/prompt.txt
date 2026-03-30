@@ -13,7 +13,7 @@ AcnSDKÊÇÔËĞĞÔÚ»úÆ÷ÈË¶Ë²à£¬ÓÃÓÚÓëºËĞÄÍø²àAcnAgentºÍAgentGWÍ¨ĞÅµÄ×é¼ş¡£ĞèÒª°üÀ¨ÒÔÏ
 ## Ö÷ÒªÁ÷³Ì
 Ê×ÏÈÊµÏÖÉí·İ¹ÜÀíµÄ¹¦ÄÜ
 1. »úÆ÷ÈË´´½¨AcnSDKÊµÀı£¬±£´ærobot_name£¬IdentityManager¡¢HttpClient¡¢CredentialIssuerÊµÀı£»¶¨ÒåWebSocketClient¡¢MoQClient¡¢TaskManager±äÁ¿£¬³õÊ¼ÖµÎªNone£»ÍøÂç×´Ì¬ÎªÄ¬ÈÏÖµ"OFFLINE"£»Èô±¾µØ²»´æÔÚÎÄ¼ş£¬Éú³É¹«Ô¿Ë½Ô¿²¢±£´æ£»
-2. »úÆ÷ÈËµ÷ÓÃAcnSDKµÄregister_robot_infoÀ´ÉêÇëÊı×ÖÉí·İ£¬ÊäÈë²ÎÊıÎªRobotInfo£¬°üÀ¨name£¬owner£¨µç»°ºÅÂë¸ñÊ½£©£¬description£¬priority£¬ÒÔ¼°¸½¼ÓĞÅÏ¢metadata¡£AcnSDKµ÷ÓÃhttpClientµÄregister_robot_infoº¯Êı¸øAcnAgent·¢ËÍPOSTÇëÇó£¨/idm/v1/identity-applications£©£¬ÊÕµ½ÏìÓ¦ºó£¬½â³öagent_idºÍvc0±£´æµ½IdentityManagerÄÚ£¬²¢Ïò»úÆ÷ÈË·µ»Øagent_id;
+2. »úÆ÷ÈËµ÷ÓÃAcnSDKµÄregister_agent_infoÀ´ÉêÇëÊı×ÖÉí·İ£¬ÊäÈë²ÎÊıÎªRobotInfo£¬°üÀ¨name£¬owner£¨µç»°ºÅÂë¸ñÊ½£©£¬description£¬priority£¬ÒÔ¼°¸½¼ÓĞÅÏ¢metadata¡£AcnSDKµ÷ÓÃhttpClientµÄregister_agent_infoº¯Êı¸øAcnAgent·¢ËÍPOSTÇëÇó£¨/idm/v1/identity-applications£©£¬ÊÕµ½ÏìÓ¦ºó£¬½â³öagent_idºÍvc0±£´æµ½IdentityManagerÄÚ£¬²¢Ïò»úÆ÷ÈË·µ»Øagent_id;
 POSTÇëÇó¸ñÊ½Îª£º
 {
     "method": "POST",

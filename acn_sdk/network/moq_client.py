@@ -1,19 +1,62 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections import defaultdict
+from typing import Any, Callable, Coroutine
+
+from moq.encoding import FullTrackName
+from moq.pub import MOQPublisher, PublishedObject
+from moq.sub import MOQSubscriber, ReceivedObject
 
 
 class MoQClient:
-    def __init__(self, host: str, remote_port: int, local_port: int, role: str) -> None:
+    def __init__(
+        self,
+        host: str,
+        remote_port: int,
+        local_port: int,
+        role: str,
+        on_object_received: Callable[[str, str, bytes], None] | None = None,
+    ) -> None:
         self.host = host
         self.remote_port = remote_port
         self.local_port = local_port
         self.role = role
+        self.on_object_received = on_object_received
         self._logger = logging.getLogger(self.__class__.__name__)
         self._subscriptions: dict[str, list[str]] = defaultdict(list)
+        self._published_tracks: set[str] = set()
+        self._object_counters: dict[str, int] = defaultdict(int)
+        self._connected = False
+        self._loop: asyncio.AbstractEventLoop | None = None
+
+        self._publisher: MOQPublisher | None = None
+        self._subscriber: MOQSubscriber | None = None
 
     def connect(self) -> None:
+        self._logger.info(
+            "Connecting MoQ client role=%s local_port=%s remote=%s:%s",
+            self.role,
+            self.local_port,
+            self.host,
+            self.remote_port,
+        )
+        self._loop = asyncio.new_event_loop()
+        if self.role == "publisher":
+            self._publisher = MOQPublisher(self.host, self.remote_port)
+            connected = self._run_async(self._publisher.connect())
+        elif self.role == "subscriber":
+            self._subscriber = MOQSubscriber(self.host, self.remote_port)
+            self._subscriber.set_handlers(on_object_received=self._handle_received_object)
+            connected = self._run_async(self._subscriber.connect())
+        else:
+            raise ValueError(f"Unsupported MoQ role: {self.role}")
+
+        if not connected:
+            raise RuntimeError(f"Failed to connect MoQ {self.role} to {self.host}:{self.remote_port}")
+
+        self._connected = True
         self._logger.info(
             "MoQ client connected role=%s local_port=%s remote=%s:%s",
             self.role,
@@ -22,14 +65,100 @@ class MoQClient:
             self.remote_port,
         )
 
-    def publish(self, track: str, payload: str) -> None:
-        self._logger.info("MoQ publish track=%s payload=%s", track, payload)
+    def publish(self, namespace: str, track: str) -> None:
+        if self._publisher is None:
+            raise RuntimeError("MoQ publisher is not connected.")
+        full_track_name = self._build_full_track_name(namespace, track)
+        published = self._run_async(self._publisher.publish(full_track_name))
+        if not published:
+            raise RuntimeError(f"Failed to publish track: {self._track_key(namespace, track)}")
+        self._published_tracks.add(self._track_key(namespace, track))
+        self._logger.info("MoQ publish namespace=%s track=%s", namespace, track)
 
-    def subscribe(self, track: str, subscriber_id: str) -> None:
-        self._subscriptions[track].append(subscriber_id)
-        self._logger.info("MoQ subscribe track=%s subscriber=%s", track, subscriber_id)
+    def send_object(self, namespace: str, track: str, payload: bytes) -> None:
+        if self._publisher is None:
+            raise RuntimeError("MoQ publisher is not connected.")
+        track_key = self._track_key(namespace, track)
+        if track_key not in self._published_tracks:
+            raise RuntimeError(f"Track is not published: {track_key}")
+        object_id = self._object_counters[track_key]
+        self._object_counters[track_key] += 1
+        full_track_name = self._build_full_track_name(namespace, track)
+        self._run_async(
+            self._publisher.send_object(
+                full_track_name,
+                PublishedObject(group_id=0, object_id=object_id, payload=payload, use_datagram=True),
+            )
+        )
+        self._logger.info(
+            "MoQ send object namespace=%s track=%s object_id=%s payload_size=%s",
+            namespace,
+            track,
+            object_id,
+            len(payload),
+        )
+
+    def subscribe(self, namespace: str, track: str, subscriber_id: str) -> None:
+        if self._subscriber is None:
+            raise RuntimeError("MoQ subscriber is not connected.")
+        full_track_name = self._build_full_track_name(namespace, track)
+        subscribed = self._run_async(self._subscriber.subscribe(full_track_name))
+        if not subscribed:
+            raise RuntimeError(f"Failed to subscribe track: {self._track_key(namespace, track)}")
+        self._subscriptions[self._track_key(namespace, track)].append(subscriber_id)
+        self._logger.info(
+            "MoQ subscribe namespace=%s track=%s subscriber=%s",
+            namespace,
+            track,
+            subscriber_id,
+        )
+
+    def simulate_incoming_object(self, namespace: str, track: str, payload: bytes) -> None:
+        self._logger.info(
+            "MoQ simulate incoming object namespace=%s track=%s payload_size=%s",
+            namespace,
+            track,
+            len(payload),
+        )
+        if self.on_object_received is not None:
+            self.on_object_received(namespace, track, payload)
+
+    def pump(self, duration: float = 0.1) -> None:
+        if self._loop is None:
+            raise RuntimeError("MoQ event loop is not initialized.")
+        self._run_async(asyncio.sleep(duration))
+
+    def is_published(self, namespace: str, track: str) -> bool:
+        return self._track_key(namespace, track) in self._published_tracks
+
+    def is_subscribed(self, namespace: str, track: str, subscriber_id: str) -> bool:
+        return subscriber_id in self._subscriptions.get(self._track_key(namespace, track), [])
 
     def disconnect(self) -> None:
+        self._logger.info(
+            "Disconnecting MoQ client role=%s local_port=%s remote=%s:%s",
+            self.role,
+            self.local_port,
+            self.host,
+            self.remote_port,
+        )
+        if self._loop is not None:
+            self._run_async(self._shutdown_clients())
+        self._subscriptions.clear()
+        self._published_tracks.clear()
+        self._object_counters.clear()
+        self._connected = False
+        if self._loop is not None:
+            pending = asyncio.all_tasks(self._loop)
+            for task in pending:
+                task.cancel()
+            if pending:
+                self._loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
+            self._loop.run_until_complete(self._loop.shutdown_asyncgens())
+            self._loop.close()
+            self._loop = None
+        self._publisher = None
+        self._subscriber = None
         self._logger.info(
             "MoQ client disconnected role=%s local_port=%s remote=%s:%s",
             self.role,
@@ -37,4 +166,61 @@ class MoQClient:
             self.host,
             self.remote_port,
         )
-        self._subscriptions.clear()
+
+    def close(self) -> None:
+        self.disconnect()
+
+    def _handle_received_object(self, obj: ReceivedObject) -> None:
+        if self.on_object_received is None or self._subscriber is None:
+            return
+        track_name = self._subscriber._track_aliases.get(obj.track_alias)
+        if track_name is None:
+            self._logger.warning("Received object for unknown track_alias=%s", obj.track_alias)
+            return
+        namespace = "/" + "/".join(segment.decode("utf-8") for segment in track_name.namespace)
+        track = track_name.track_name.decode("utf-8")
+        self.on_object_received(namespace, track, obj.payload)
+
+    def _run_async(self, coroutine: Coroutine[Any, Any, object]) -> object:
+        if self._loop is None:
+            raise RuntimeError("MoQ event loop is not initialized.")
+        return self._loop.run_until_complete(coroutine)
+
+    async def _shutdown_clients(self) -> None:
+        if self._publisher is not None:
+            publisher_session = getattr(self._publisher, "_session", None)
+            if publisher_session is not None:
+                publisher_session.close()
+                self._publisher._session = None
+            publisher_client = getattr(self._publisher, "_client", None)
+            if publisher_client is not None:
+                await publisher_client.aclose()
+                self._publisher._client = None
+            elif hasattr(self._publisher, "disconnect"):
+                self._publisher.disconnect()
+        if self._subscriber is not None:
+            object_task = getattr(self._subscriber, "_object_task", None)
+            if object_task is not None:
+                object_task.cancel()
+                await asyncio.gather(object_task, return_exceptions=True)
+                self._subscriber._object_task = None
+            subscriber_session = getattr(self._subscriber, "_session", None)
+            if subscriber_session is not None:
+                subscriber_session.close()
+                self._subscriber._session = None
+            subscriber_client = getattr(self._subscriber, "_client", None)
+            if subscriber_client is not None:
+                await subscriber_client.aclose()
+                self._subscriber._client = None
+            elif hasattr(self._subscriber, "disconnect"):
+                self._subscriber.disconnect()
+
+    @staticmethod
+    def _build_full_track_name(namespace: str, track: str) -> FullTrackName:
+        normalized = namespace.strip("/")
+        namespace_parts = [] if not normalized else [segment.encode("utf-8") for segment in normalized.split("/")]
+        return FullTrackName(namespace_parts, track.encode("utf-8"))
+
+    @staticmethod
+    def _track_key(namespace: str, track: str) -> str:
+        return f"{namespace}::{track}"

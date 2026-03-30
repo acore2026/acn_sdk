@@ -38,7 +38,7 @@ acn_sdk.task.task_manager.TaskManager
 
 如果当前已经连接了网络组件，`reload_config()` 会先断开现有连接，再按新配置重新初始化运行环境。
 
-### `register_robot_info(robot_info: RobotInfo) -> str`
+### `register_agent_info(robot_info: RobotInfo) -> str`
 
 向 `AcnAgent` 提交数字身份申请，返回 `agent_id`。
 
@@ -166,9 +166,111 @@ POST /acn-agent/v1/agent-deletions
 - 停止全部任务
 - `signature` 仅基于 `timestamp` 生成，编码采用 `base64`
 
+### `join_network(agent_id: str) -> dict[str, Any]`
+
+入网认证入口。
+
+行为：
+
+- 校验 `agent_id` 必须与本机已注册身份一致
+- 创建 `WebSocketClient`，连接 `ws://<network_ip>:<agent_gw_ws_port><path>`
+- 发送 `SETUP` 消息，必须收到对端 `SETUP` 且 `payload.status == "OK"`
+- 初始化 `moq_pub_client`、`moq_sub_client`、`TaskManager`
+- 全部成功后将状态切换为 `ONLINE`
+
+返回示例：
+
+```json
+{
+  "result": "success",
+  "agent_id": "did:acn:agent:987654321"
+}
+```
+
+### `logout_network(agent_id: str) -> dict[str, Any]`
+
+主动退网。
+
+行为：
+
+- 发送 `DISCONNECTION`
+- 断开 WebSocket / MoQ / TaskManager
+- 状态切换回 `OFFLINE`
+
+### `request_task_execution(agent_id: str, task_info: str, task_id: str | None = None) -> str`
+
+任务执行请求。
+
+请求路径：
+
+```text
+POST /acn-agent/v1/task-executions
+```
+
+说明：
+
+- 仅允许在 `ONLINE` 状态调用
+- 若未传 `task_id`，SDK 自动生成 `task-xxxxx`
+- 返回最终使用的 `task_id`
+
+### `request_terminate_task(agent_id: str, task_id: str, reason: str = "", force: bool = False) -> dict[str, Any]`
+
+任务终止请求。
+
+请求路径：
+
+```text
+POST /acn-agent/v1/task-execution-terminations
+```
+
+### `task_info_report(agent_id: str, task_id: str, topic: str, message_info: bytes) -> dict[str, Any]`
+
+任务信息上报。
+
+行为：
+
+- 仅允许在 `ONLINE` 状态调用
+- 自动拼装 `namespace=/{task_id}/{agent_id}`
+- 若该 `namespace + track` 首次发布，则先执行 MOQ `publish`
+- 首次发布后发送 WebSocket `PUBLISH_TRACK`
+- 然后执行 MOQ `send_object`
+- 当前实现默认使用 MOQ datagram 发送对象，便于本地 relay 联调
+
+### `request_task_collaboration(agent_id: str, task_id: str, required_capabilities: str | list[str]) -> dict[str, Any]`
+
+请求协同智能体。
+
+请求路径：
+
+```text
+POST /arf/v1/agent-discoveries
+```
+
+### `accept_task_collaboration(agent_id: str, task_id: str) -> dict[str, Any]`
+
+接受协同任务，请求体通过 WebSocket 发送 `TASK_ACCEPT_COLLABORATION`。
+
+### `start_task(agent_id: str, dst_agent_id: str, task_id: str, task_description: str) -> dict[str, Any]`
+
+发送 WebSocket `START_TASK`，用于通知协作方开始执行任务。
+
+### `poll_network_message() -> dict[str, Any]`
+
+从 WebSocket 读取一条消息并立即交给 SDK 内部处理。
+
+### `handle_network_message(message: str | dict[str, Any]) -> dict[str, Any]`
+
+处理服务端下发的 WebSocket 消息。
+
+当前支持：
+
+- `SUBSCRIBE_TRACK`：触发本地 MOQ 订阅
+- `CLEAR`：清空本地任务、发布和订阅缓存
+- 其他消息类型：透传给初始化时注册的 `on_message_received(message_type, payload)` 回调
+
 ### `connect_network() -> None`
 
-初始化 `WebSocketClient`、`moq_pub_client`、`moq_sub_client`、`TaskManager`，并把状态切到 `ONLINE`。
+保留的轻量连接方法，只做本地网络组件初始化，不执行 WebSocket `SETUP` 握手。更推荐使用 `join_network()`。
 
 ### `disconnect_all() -> None`
 
@@ -216,8 +318,11 @@ python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 pip install -e .
-uvicorn app.mock_acn_agent:app --host 127.0.0.1 --port 9010
+python3 mock/mock_acn_agent.py --host 127.0.0.1 --port 9010
+python3 mock/mock_agent_gw.py --host 127.0.0.1 --port 9002
+python3 mock/mock_moq_relay.py --host 127.0.0.1 --port 9003 --cache-dir data/moq-relay-cache
 python3 examples/demo_identity_flow.py
+python3 examples/demo_task_flow.py
 pytest
 ```
 
@@ -225,16 +330,25 @@ pytest
 
 1. `pip install -r requirements.txt`
 2. `pip install -e .`
-3. `uvicorn app.mock_acn_agent:app --host 127.0.0.1 --port 9010`
-4. `python3 examples/demo_identity_flow.py`
-5. `pytest -q`
+3. `python3 mock/mock_acn_agent.py --host 127.0.0.1 --port 9010`
+4. `python3 mock/mock_agent_gw.py --host 127.0.0.1 --port 9002`
+5. `python3 mock/mock_moq_relay.py --host 127.0.0.1 --port 9003 --cache-dir data/moq-relay-cache`
+6. `python3 examples/demo_identity_flow.py`
+7. `python3 examples/demo_task_flow.py`
+8. `pytest -q`
+
+`demo_task_flow.py` 的当前校验目标：
+
+- `AliceAgent` 和 `RobotDog` 分别完成注册与入网
+- `RobotDog` 通过 WebSocket 收到协同消息
+- `RobotDog` 通过真实 MOQ relay 收到 `Location` 对象，回调类型为 `MOQ_OBJECT`
 
 PyCharm 调测：
 
 1. 打开项目根目录。
 2. 解释器选择 Python 3.10+。
 3. 安装 `requirements.txt`，并执行 `pip install -e .`。
-4. 创建 `uvicorn app.mock_acn_agent:app --host 127.0.0.1 --port 9010` 配置。
+4. 创建 `python mock/mock_acn_agent.py --host 127.0.0.1 --port 9010` 配置。
 5. 创建 `examples/demo_identity_flow.py` 配置。
 6. 先启动 mock 服务，再启动示例或测试。
 7. 如果你修改了 `config/config.yaml`，在调试会话里直接调用 `sdk.reload_config()` 即可重新读取配置。

@@ -28,3 +28,31 @@ class DeregisterRequest(BaseModel):
     timestamp: str
     signature: str
     signature_encoding: str = "base64"
+
+
+class TaskExecutionRequest(BaseModel):
+    agent_id: str
+    task_id: str
+    description: str
+    timestamp: str
+
+
+class TaskTerminationRequest(BaseModel):
+    agent_id: str
+    task_id: str
+    reason: str
+    timestamp: str
+    force: bool = False
+
+
+class AgentDiscoveryRequest(BaseModel):
+    task_id: str
+    agent_id: str
+    required_capabilities: list[str]
+    timestamp: str
+
+
+class WebSocketMessage(BaseModel):
+    type: str
+    timestamp: str
+    payload: dict[str, Any]

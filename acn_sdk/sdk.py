@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import json
 import logging
+import secrets
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -10,7 +12,15 @@ from .credential.credential_issuer import CredentialIssuer, HUAWEI_ISSUER_DID
 from .crypto import ensure_ec_keypair, load_public_key_pem, sign_timestamp
 from .identity.identity_manager import IdentityManager
 from .logging_config import setup_logging
-from .models import AgentCardRequest, DeregisterRequest, RobotInfo
+from .models import (
+    AgentCardRequest,
+    AgentDiscoveryRequest,
+    DeregisterRequest,
+    RobotInfo,
+    TaskExecutionRequest,
+    TaskTerminationRequest,
+    WebSocketMessage,
+)
 from .network.http_client import HttpClient
 from .network.moq_client import MoQClient
 from .network.websocket_client import WebSocketClient
@@ -25,16 +35,22 @@ class AcnSDK:
         robot_name: str,
         issuer_id: str = HUAWEI_ISSUER_DID,
         config_path: str | Path | None = None,
+        on_message_received: Any | None = None,
     ) -> None:
         self.config_path = Path(config_path).expanduser().resolve() if config_path is not None else DEFAULT_CONFIG_PATH
         self.config = SDKConfig.load(self.config_path)
         self.robot_name = robot_name
+        self.issuer_id = issuer_id
+        self.on_message_received = on_message_received
         self.credential_issuer = CredentialIssuer()
         self.websocket_client: WebSocketClient | None = None
         self.moq_pub_client: MoQClient | None = None
         self.moq_sub_client: MoQClient | None = None
         self.task_manager: TaskManager | None = None
         self.network_status = "OFFLINE"
+        self._published_tracks: set[str] = set()
+        self._subscribed_tracks: set[str] = set()
+        self._task_registry: dict[str, dict[str, Any]] = {}
 
         self._apply_config()
         self._logger.info("AcnSDK initialized for robot=%s, network_status=%s", robot_name, self.network_status)
@@ -66,7 +82,7 @@ class AcnSDK:
         self._apply_config()
         self._logger.info("Reloaded configuration from %s", self.config_path)
 
-    def register_robot_info(self, robot_info: RobotInfo) -> str:
+    def register_agent_info(self, robot_info: RobotInfo) -> str:
         timestamp = self._utc_timestamp()
         payload = {
             "owner": robot_info.owner,
@@ -79,7 +95,7 @@ class AcnSDK:
         payload["signature"] = sign_timestamp(self.config.storage.private_key_file, timestamp)
         payload["signature_encoding"] = "base64"
 
-        response = self.http_client.register_robot_info(payload)
+        response = self.http_client.register_agent_info(payload)
         agent_id = response["agent_id"]
         vc0 = response["vc0"]
         self.identity_manager.set_identity(
@@ -152,28 +168,216 @@ class AcnSDK:
         self._logger.info("Robot deregistered. response=%s", response)
         return response
 
-    def connect_network(self) -> None:
-        self.websocket_client = WebSocketClient(self.config.network.agent_gw_ws_url)
-        self.moq_pub_client = MoQClient(
-            host=self.config.network.network_ip,
-            remote_port=self.config.network.agent_gw_moq_port,
-            local_port=self.config.sdk.moq_pub_port,
-            role="publisher",
-        )
-        self.moq_sub_client = MoQClient(
-            host=self.config.network.network_ip,
-            remote_port=self.config.network.agent_gw_moq_port,
-            local_port=self.config.sdk.moq_sub_port,
-            role="subscriber",
-        )
-        self.task_manager = TaskManager()
-        self.moq_pub_client.connect()
-        self.moq_sub_client.connect()
-        self.network_status = "ONLINE"
-        self._logger.info("Network state changed to %s", self.network_status)
+    def join_network(self, agent_id: str) -> dict[str, Any]:
+        self._require_local_agent(agent_id)
+        if self.network_status == "ONLINE":
+            raise RuntimeError("Robot is already online.")
 
-    def disconnect_all(self) -> None:
-        self.http_client.close()
+        self.websocket_client = self._create_websocket_client()
+        self.moq_pub_client = self._create_moq_client("publisher", self.config.sdk.moq_pub_port)
+        self.moq_sub_client = self._create_moq_client("subscriber", self.config.sdk.moq_sub_port)
+        self.task_manager = TaskManager()
+
+        try:
+            self.websocket_client.connect()
+            self.websocket_client.send_json(
+                self._build_ws_message(
+                    "SETUP",
+                    {"src_agent_id": agent_id},
+                )
+            )
+            response = self.websocket_client.receive_json()
+            if response.get("type") != "SETUP" or response.get("payload", {}).get("status") != "OK":
+                raise RuntimeError(f"Unexpected setup response: {response}")
+            self.moq_pub_client.connect()
+            self.moq_sub_client.connect()
+        except Exception:
+            self.disconnect_all(close_http=False)
+            raise
+
+        self.network_status = "ONLINE"
+        self._logger.info("Network join successful for agent_id=%s", agent_id)
+        return {"result": "success", "agent_id": agent_id}
+
+    def logout_network(self, agent_id: str) -> dict[str, Any]:
+        self._require_local_agent(agent_id)
+        if self.network_status != "ONLINE":
+            raise RuntimeError("Robot is not online.")
+        if self.websocket_client is not None:
+            self.websocket_client.send_json(
+                self._build_ws_message(
+                    "DISCONNECTION",
+                    {"src_agent_id": agent_id},
+                )
+            )
+        self.disconnect_all(close_http=False)
+        return {"result": "success", "agent_id": agent_id}
+
+    def request_task_execution(self, agent_id: str, task_info: str, task_id: str | None = None) -> str:
+        self._require_online_agent(agent_id)
+        task_id = task_id or self._generate_task_id()
+        request = TaskExecutionRequest(
+            agent_id=agent_id,
+            task_id=task_id,
+            description=task_info,
+            timestamp=self._utc_timestamp(),
+        )
+        response = self.http_client.request_task_execution(request)
+        self._task_registry[task_id] = {
+            "description": task_info,
+            "status": "requested",
+        }
+        self._logger.info("Task execution requested. task_id=%s response=%s", task_id, response)
+        return response.get("task_id", task_id)
+
+    def request_terminate_task(
+        self,
+        agent_id: str,
+        task_id: str,
+        reason: str = "",
+        force: bool = False,
+    ) -> dict[str, Any]:
+        self._require_online_agent(agent_id)
+        request = TaskTerminationRequest(
+            agent_id=agent_id,
+            task_id=task_id,
+            reason=reason,
+            timestamp=self._utc_timestamp(),
+            force=force,
+        )
+        response = self.http_client.request_terminate_task(request)
+        if task_id in self._task_registry:
+            self._task_registry[task_id]["status"] = "terminated"
+        self._logger.info("Task termination requested. task_id=%s response=%s", task_id, response)
+        return response
+
+    def task_info_report(self, agent_id: str, task_id: str, topic: str, message_info: bytes) -> dict[str, Any]:
+        self._require_online_agent(agent_id)
+        namespace = f"/{task_id}/{agent_id}"
+        track_key = self._track_key(namespace, topic)
+
+        if self.moq_pub_client is None:
+            raise RuntimeError("MoQ publisher is not connected.")
+
+        if track_key not in self._published_tracks:
+            self.moq_pub_client.publish(namespace, topic)
+            if self.websocket_client is None:
+                raise RuntimeError("WebSocket is not connected.")
+            self.websocket_client.send_json(
+                self._build_ws_message(
+                    "PUBLISH_TRACK",
+                    {
+                        "src_agent_id": agent_id,
+                        "task_id": task_id,
+                        "track_list": [{"namespace": namespace, "track": topic}],
+                    },
+                )
+            )
+            self._published_tracks.add(track_key)
+
+        self.moq_pub_client.send_object(namespace, topic, message_info)
+        self._logger.info(
+            "Task info reported. agent_id=%s task_id=%s topic=%s payload_size=%s",
+            agent_id,
+            task_id,
+            topic,
+            len(message_info),
+        )
+        return {"result": "success", "task_id": task_id, "topic": topic}
+
+    def request_task_collaboration(
+        self,
+        agent_id: str,
+        task_id: str,
+        required_capabilities: str | list[str],
+    ) -> dict[str, Any]:
+        self._require_online_agent(agent_id)
+        capability_list = [required_capabilities] if isinstance(required_capabilities, str) else required_capabilities
+        request = AgentDiscoveryRequest(
+            task_id=task_id,
+            agent_id=agent_id,
+            required_capabilities=capability_list,
+            timestamp=self._utc_timestamp(),
+        )
+        response = self.http_client.request_task_collaboration(request)
+        self._logger.info("Task collaboration requested. task_id=%s response=%s", task_id, response)
+        return response
+
+    def accept_task_collaboration(self, agent_id: str, task_id: str) -> dict[str, Any]:
+        self._require_online_agent(agent_id)
+        if self.websocket_client is None:
+            raise RuntimeError("WebSocket is not connected.")
+        message = self._build_ws_message(
+            "TASK_ACCEPT_COLLABORATION",
+            {
+                "src_agent_id": agent_id,
+                "dst_agent_id": "ARF",
+                "task_id": task_id,
+                "result": "OK",
+            },
+        )
+        self.websocket_client.send_json(message)
+        self._logger.info("Task collaboration accepted. task_id=%s", task_id)
+        return {"result": "success", "task_id": task_id}
+
+    def start_task(self, agent_id: str, dst_agent_id: str, task_id: str, task_description: str) -> dict[str, Any]:
+        self._require_online_agent(agent_id)
+        if self.websocket_client is None:
+            raise RuntimeError("WebSocket is not connected.")
+        message = self._build_ws_message(
+            "START_TASK",
+            {
+                "src_agent_id": agent_id,
+                "dst_agent_id": dst_agent_id,
+                "task_id": task_id,
+                "task_description": task_description,
+            },
+        )
+        self.websocket_client.send_json(message)
+        self._logger.info(
+            "Start task message sent. src_agent_id=%s dst_agent_id=%s task_id=%s",
+            agent_id,
+            dst_agent_id,
+            task_id,
+        )
+        return {"result": "success", "task_id": task_id, "dst_agent_id": dst_agent_id}
+
+    def poll_network_message(self) -> dict[str, Any]:
+        if self.websocket_client is None:
+            raise RuntimeError("WebSocket is not connected.")
+        message = self.websocket_client.receive_json()
+        self.handle_network_message(message)
+        return message
+
+    def handle_network_message(self, message: str | dict[str, Any]) -> dict[str, Any]:
+        parsed_message = json.loads(message) if isinstance(message, str) else message
+        envelope = WebSocketMessage.model_validate(parsed_message)
+        message_type = envelope.type
+        payload = envelope.payload
+        self._logger.info("Handling network message type=%s payload=%s", message_type, payload)
+
+        if message_type == "SUBSCRIBE_TRACK":
+            self._handle_subscribe_track(payload)
+        elif message_type == "CLEAR":
+            self._published_tracks.clear()
+            self._subscribed_tracks.clear()
+            self._task_registry.clear()
+
+        if self.on_message_received is not None:
+            self.on_message_received(message_type, payload)
+        return parsed_message
+
+    def connect_network(self) -> None:
+        self.websocket_client = self._create_websocket_client()
+        self.moq_pub_client = self._create_moq_client("publisher", self.config.sdk.moq_pub_port)
+        self.moq_sub_client = self._create_moq_client("subscriber", self.config.sdk.moq_sub_port)
+        self.task_manager = TaskManager()
+        self.network_status = "ONLINE"
+        self._logger.info("Network components initialized without handshake. network_status=%s", self.network_status)
+
+    def disconnect_all(self, close_http: bool = True) -> None:
+        if close_http:
+            self.http_client.close()
         if self.websocket_client is not None:
             self.websocket_client.disconnect()
             self.websocket_client = None
@@ -186,6 +390,8 @@ class AcnSDK:
         if self.task_manager is not None:
             self.task_manager.stop_all()
             self.task_manager = None
+        self._published_tracks.clear()
+        self._subscribed_tracks.clear()
         self.network_status = "OFFLINE"
         self._logger.info("Network state changed to %s", self.network_status)
 
@@ -202,3 +408,64 @@ class AcnSDK:
     @staticmethod
     def _utc_timestamp() -> str:
         return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+    def _create_websocket_client(self) -> WebSocketClient:
+        return WebSocketClient(self.config.network.agent_gw_ws_url)
+
+    def _create_moq_client(self, role: str, local_port: int) -> MoQClient:
+        return MoQClient(
+            host=self.config.network.network_ip,
+            remote_port=self.config.network.agent_gw_moq_port,
+            local_port=local_port,
+            role=role,
+            on_object_received=self._handle_moq_object_received if role == "subscriber" else None,
+        )
+
+    def _handle_subscribe_track(self, payload: dict[str, Any]) -> None:
+        if self.moq_sub_client is None:
+            raise RuntimeError("MoQ subscriber is not connected.")
+        for track_info in payload.get("track_list", []):
+            namespace = track_info["namespace"]
+            track = track_info["track"]
+            track_key = self._track_key(namespace, track)
+            if track_key in self._subscribed_tracks:
+                continue
+            self.moq_sub_client.subscribe(namespace, track, self.identity_manager.agent_id or self.robot_name)
+            self._subscribed_tracks.add(track_key)
+
+    def _handle_moq_object_received(self, namespace: str, track: str, payload: bytes) -> None:
+        if self.on_message_received is not None:
+            self.on_message_received(
+                "MOQ_OBJECT",
+                {
+                    "namespace": namespace,
+                    "track": track,
+                    "message_info": payload,
+                },
+            )
+
+    def _require_local_agent(self, agent_id: str) -> None:
+        if not agent_id:
+            raise ValueError("agent_id must not be empty.")
+        if self.identity_manager.agent_id != agent_id:
+            raise ValueError("The supplied agent_id does not match this device.")
+
+    def _require_online_agent(self, agent_id: str) -> None:
+        self._require_local_agent(agent_id)
+        if self.network_status != "ONLINE":
+            raise RuntimeError("Robot must be online before performing task operations.")
+
+    def _build_ws_message(self, message_type: str, payload: dict[str, Any]) -> dict[str, Any]:
+        return WebSocketMessage(
+            type=message_type,
+            timestamp=self._utc_timestamp(),
+            payload=payload,
+        ).model_dump(mode="json")
+
+    @staticmethod
+    def _generate_task_id() -> str:
+        return f"task-{secrets.token_hex(3)[:5]}"
+
+    @staticmethod
+    def _track_key(namespace: str, track: str) -> str:
+        return f"{namespace}::{track}"

@@ -5,7 +5,13 @@ from typing import Any, Protocol
 
 import httpx
 import json
-from ..models import AgentCardRequest, DeregisterRequest
+from ..models import (
+    AgentCardRequest,
+    AgentDiscoveryRequest,
+    DeregisterRequest,
+    TaskExecutionRequest,
+    TaskTerminationRequest,
+)
 
 
 class SupportsHttpPost(Protocol):
@@ -23,7 +29,7 @@ class HttpClient:
         # Local SDK-to-agent traffic should not inherit shell proxy settings.
         self._session = session or httpx.Client(base_url=self.base_url, timeout=10.0, trust_env=False)
 
-    def register_robot_info(self, payload: dict[str, Any]) -> dict[str, Any]:
+    def register_agent_info(self, payload: dict[str, Any]) -> dict[str, Any]:
         return self._post("/idm/v1/identity-applications", payload)
 
     def register_agent_attribute(self, payload: AgentCardRequest) -> dict[str, Any]:
@@ -31,6 +37,15 @@ class HttpClient:
 
     def deregister_robot(self, payload: DeregisterRequest) -> dict[str, Any]:
         return self._post("/acn-agent/v1/agent-deletions", payload.model_dump(mode="json"))
+
+    def request_task_execution(self, payload: TaskExecutionRequest) -> dict[str, Any]:
+        return self._post("/acn-agent/v1/task-executions", payload.model_dump(mode="json"))
+
+    def request_terminate_task(self, payload: TaskTerminationRequest) -> dict[str, Any]:
+        return self._post("/acn-agent/v1/task-execution-terminations", payload.model_dump(mode="json"))
+
+    def request_task_collaboration(self, payload: AgentDiscoveryRequest) -> dict[str, Any]:
+        return self._post("/arf/v1/agent-discoveries", payload.model_dump(mode="json"))
 
     def _post(self, path: str, body: dict[str, Any]) -> dict[str, Any]:
         headers = {"Content-Type": "application/json"}

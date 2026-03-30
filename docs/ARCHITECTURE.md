@@ -2,7 +2,7 @@
 
 ## 1. 总体说明
 
-本工程只实现机器人端 `AcnSDK`，通过 HTTP 与核心网侧 `AcnAgent` 通信；`AgentGW`、MoQ 服务在当前版本中只保留客户端封装和测试桩接口，不实现真实网络侧业务逻辑。
+本工程只实现机器人端 `AcnSDK`，通过 HTTP 与核心网侧 `AcnAgent` 通信，通过 WebSocket 与 `AgentGW` 交互，通过 MOQ 与 relay 传输任务数据；当前工程提供 `mock_acn_agent`、`mock_agent_gw`、`mock_moq_relay` 三个本地测试桩，便于联调注册、入网、任务协同和对象转发链路。
 
 ## 2. 模块划分
 
@@ -26,7 +26,7 @@ acn_sdk/
 - `credential/CredentialIssuer`：模拟第三方能力凭证签发。
 - `network/HttpClient`：统一发送 HTTP 请求，记录请求与响应日志。
 - `network/WebSocketClient`：预留与 `AgentGW` 的长连接通信能力。
-- `network/MoQClient`：预留 track 发布/订阅封装。
+- `network/MoQClient`：基于 `moq.pub.MOQPublisher` / `moq.sub.MOQSubscriber` 的 track 发布、订阅与对象回调入口。
 - `task/TaskManager`：统一管理后台任务生命周期。
 - `config.py`：定义 `SDKConfig` / `NetworkConfig` / `StorageConfig` 数据模型与默认值。
 - `config/config.yaml`：运行时优先读取的配置文件，修改后可通过 `AcnSDK.reload_config()` 重新加载。
@@ -41,9 +41,11 @@ sequenceDiagram
     participant ID as IdentityManager
     participant HTTP as HttpClient
     participant Agent as Mock AcnAgent
+    participant GW as Mock AgentGW
+    participant Relay as Mock MOQ Relay
     participant Issuer as CredentialIssuer
 
-    Robot->>SDK: register_robot_info(RobotInfo)
+    Robot->>SDK: register_agent_info(RobotInfo)
     SDK->>SDK: 生成 timestamp / signature
     SDK->>HTTP: POST /idm/v1/identity-applications
     HTTP->>Agent: 发送身份申请
@@ -60,6 +62,25 @@ sequenceDiagram
     HTTP->>Agent: 注册能力
     Agent-->>HTTP: success
     HTTP-->>SDK: success
+
+    Robot->>SDK: join_network(agent_id)
+    SDK->>GW: WebSocket SETUP
+    GW-->>SDK: SETUP/OK
+    SDK->>SDK: 初始化 MoQ pub/sub
+    SDK-->>Robot: ONLINE
+
+    Robot->>SDK: request_task_execution(agent_id, task_info)
+    SDK->>HTTP: POST /acn-agent/v1/task-executions
+    HTTP->>Agent: 请求执行任务
+    Agent-->>HTTP: success
+    HTTP-->>SDK: task_id
+
+    GW-->>SDK: TASK_REQUEST_COLLABORATION / START_TASK / SUBSCRIBE_TRACK
+    SDK->>Robot: 回调通知业务侧
+    Robot->>SDK: accept_task_collaboration / task_info_report
+    SDK->>GW: WebSocket TASK_ACCEPT_COLLABORATION / PUBLISH_TRACK
+    SDK->>Relay: MOQ publish / send_object
+    Relay-->>SDK: MOQ object forwarding
 
     Robot->>SDK: deregister_robot(agent_id, reason)
     SDK->>HTTP: POST /acn-agent/v1/agent-deletions
@@ -86,6 +107,7 @@ flowchart LR
 - 初始状态：`OFFLINE`
 - 连接网络后：`ONLINE`
 - 去注册或断开连接后：`OFFLINE`
+- 任务上报前提：必须 `ONLINE`
 
 状态切换均通过 `logging` 输出。
 
@@ -100,5 +122,6 @@ flowchart LR
 - `HttpClient` 可替换为重试版、鉴权版、异步版。
 - `IdentityManager` 可扩展为 SQLite 或加密存储。
 - `CredentialIssuer` 未来可改为真实第三方服务调用。
-- `MoQClient` 当前为占位封装，后续可替换为真实 QUIC/MoQ 实现。
+- `mock_agent_gw` 当前负责 WebSocket 控制面联调和调试消息下发，不承担真实路由或鉴权能力。
+- `mock_moq_relay` 基于 `moq.relay.MOQRelay` 运行，当前已可用于本地真实 QUIC/MOQ 对象转发验证。
 - `TaskManager` 已抽象出统一任务入口，便于扩展心跳、订阅、重连任务。

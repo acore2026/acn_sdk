@@ -31,6 +31,9 @@ class WebSocketClient:
         self._logger.info("Received websocket payload: %s", message)
         return message
 
+    def receive_json(self) -> dict[str, Any]:
+        return json.loads(self.receive())
+
     def disconnect(self) -> None:
         if self._connection is None:
             return

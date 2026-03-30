@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import argparse
 import logging
 from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
 from fastapi import FastAPI
 from pydantic import BaseModel
+import uvicorn
 
 from acn_sdk.logging_config import setup_logging
 
@@ -41,6 +43,28 @@ class AgentDeletion(BaseModel):
     timestamp: str
     signature: str
     signature_encoding: str
+
+
+class TaskExecution(BaseModel):
+    agent_id: str
+    task_id: str
+    description: str
+    timestamp: str
+
+
+class TaskTermination(BaseModel):
+    agent_id: str
+    task_id: str
+    reason: str
+    timestamp: str
+    force: bool = False
+
+
+class AgentDiscovery(BaseModel):
+    task_id: str
+    agent_id: str
+    required_capabilities: list[str]
+    timestamp: str
 
 
 @app.post("/idm/v1/identity-applications")
@@ -99,3 +123,62 @@ def delete_agent(payload: AgentDeletion) -> dict:
     }
     logger.info("Responding agent deletion: %s", response)
     return response
+
+
+@app.post("/acn-agent/v1/task-executions")
+def request_task_execution(payload: TaskExecution) -> dict:
+    logger.info("Received task execution request: %s", payload.model_dump(mode="json"))
+    response = {
+        "result": "success",
+        "message": "Task execution requested",
+        "agent_id": payload.agent_id,
+        "task_id": payload.task_id,
+        "description": payload.description,
+    }
+    logger.info("Responding task execution request: %s", response)
+    return response
+
+
+@app.post("/acn-agent/v1/task-execution-terminations")
+def terminate_task_execution(payload: TaskTermination) -> dict:
+    logger.info("Received task termination request: %s", payload.model_dump(mode="json"))
+    response = {
+        "result": "success",
+        "message": "Task termination requested",
+        "agent_id": payload.agent_id,
+        "task_id": payload.task_id,
+        "reason": payload.reason,
+        "force": payload.force,
+    }
+    logger.info("Responding task termination request: %s", response)
+    return response
+
+
+@app.post("/arf/v1/agent-discoveries")
+def request_agent_discovery(payload: AgentDiscovery) -> dict:
+    logger.info("Received agent discovery request: %s", payload.model_dump(mode="json"))
+    response = {
+        "result": "success",
+        "message": "Agent discovery requested",
+        "agent_id": payload.agent_id,
+        "task_id": payload.task_id,
+        "required_capabilities": payload.required_capabilities,
+    }
+    logger.info("Responding agent discovery request: %s", response)
+    return response
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Start the mock ACN Agent service.")
+    parser.add_argument("--host", default="127.0.0.1")
+    parser.add_argument("--port", type=int, default=9010)
+    return parser.parse_args()
+
+
+def main() -> None:
+    args = parse_args()
+    uvicorn.run(app, host=args.host, port=args.port)
+
+
+if __name__ == "__main__":
+    main()

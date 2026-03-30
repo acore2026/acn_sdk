@@ -24,19 +24,29 @@ pip install -r requirements.txt
 pip install -e .
 ```
 
-## 3. 启动 Mock AcnAgent
+## 3. 启动 Mock AcnAgent、Mock AgentGW 与 Mock MOQ Relay
 
 ```bash
-uvicorn app.mock_acn_agent:app --host 127.0.0.1 --port 9010
+python3 mock/mock_acn_agent.py --host 127.0.0.1 --port 9010
+python3 mock/mock_agent_gw.py --host 127.0.0.1 --port 9002
+python3 mock/mock_moq_relay.py --host 127.0.0.1 --port 9003 --cache-dir data/moq-relay-cache
 ```
 
-建议先启动 mock 服务，再运行 SDK 示例或测试，保证 `AcnSDK` 初始化时就能连接到 `/idm/v1/identity-applications`、`/arf/v1/agent-cards` 和 `/acn-agent/v1/agent-deletions`。
+建议先启动三个 mock 服务，再运行 SDK 示例或测试，保证 `AcnSDK` 初始化后既能访问 HTTP 接口，也能和 `ws://127.0.0.1:9002/ws` 完成入网握手，并通过真实 `MOQ Relay` 完成 track 发布与订阅。
 
 ## 4. 运行示例
 
 ```bash
 python3 examples/demo_identity_flow.py
+python3 examples/demo_task_flow.py
 ```
+
+其中 `demo_task_flow.py` 会创建两个独立 SDK 实例，演示：
+
+- 发起方请求协同任务
+- 协作方通过 WebSocket 接收 `TASK_REQUEST_COLLABORATION`
+- 发起方发布 `Location` track
+- 协作方通过真实 MOQ relay 收到 `MOQ_OBJECT`
 
 示例中的 SDK 导入路径已经切换为：
 
@@ -62,7 +72,20 @@ chmod +x scripts/start_sdk_demo.sh
 
 ```text
 Script: uvicorn
-Parameters: app.mock_acn_agent:app --host 127.0.0.1 --port 9010
+Script path: mock/mock_acn_agent.py
+Parameters: --host 127.0.0.1 --port 9010
+Working directory: 项目根目录
+```
+
+```text
+Script path: mock/mock_agent_gw.py
+Parameters: --host 127.0.0.1 --port 9002
+Working directory: 项目根目录
+```
+
+```text
+Script path: mock/mock_moq_relay.py
+Parameters: --host 127.0.0.1 --port 9003 --cache-dir data/moq-relay-cache
 Working directory: 项目根目录
 ```
 
@@ -73,10 +96,15 @@ Script path: examples/demo_identity_flow.py
 Working directory: 项目根目录
 ```
 
+```text
+Script path: examples/demo_task_flow.py
+Working directory: 项目根目录
+```
+
 如未执行 `pip install -e .`，则需要把项目根目录标记为 `Sources Root`，否则 `from acn_sdk import ...` 无法导入。
 
 6. 调试顺序：
-   先启动 mock AcnAgent，再启动示例或 `pytest`。
+   先启动 mock AcnAgent、mock AgentGW、mock MOQ Relay，再启动示例或 `pytest`。
 
 7. 如需观察日志，默认输出文件为：
 
@@ -99,9 +127,11 @@ logs/acn_sdk.log
 当前实现已覆盖以下行为：
 
 - `AcnSDK` 初始化时自动检查本地公钥和私钥，不存在则生成并保存 EC P-256 密钥
-- `register_robot_info` 成功后保存 `agent_id` 和 `vc0`，请求体中的 `signature` 仅基于 `timestamp` 生成，编码采用 `base64`
+- `register_agent_info` 成功后保存 `agent_id` 和 `vc0`，请求体中的 `signature` 仅基于 `timestamp` 生成，编码采用 `base64`
 - `register_agent_attribute(agent_id, capability)` 会先校验传入的 `agent_id` 与本机身份一致，再生成全部能力 VC，并以 `vc_list=[vc0, *capability_vcs]` 的格式发送到 `/arf/v1/agent-cards`，请求体字段顺序为 `agent_id`、`timestamp`、`signature`、`signature_encoding`、`vc_list`
 - `deregister_robot` 仅清理本地身份状态，不删除已生成的公钥和私钥，请求体中的 `signature` 仅基于 `timestamp` 生成，编码采用 `base64`
+- `join_network` 会先通过 WebSocket 向 AgentGW 发送 `SETUP`，收到对端 `SETUP/OK` 且本地 MOQ 客户端建立后才视为入网成功
+- `demo_task_flow.py` 可以演示任务请求、服务端推送协同消息、SDK 回调通知、`SUBSCRIBE_TRACK` 处理和通过真实 MOQ relay 传输 `task_info_report`
 
 本地验证命令：
 

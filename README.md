@@ -36,8 +36,10 @@ acn-sdk/
 │   └── task/
 │       ├── __init__.py
 │       └── task_manager.py
-├── app/
-│   └── mock_acn_agent.py
+├── mock/
+│   ├── mock_acn_agent.py
+│   ├── mock_agent_gw.py
+│   └── mock_moq_relay.py
 ├── config/
 │   └── config.yaml
 ├── docs/
@@ -45,8 +47,10 @@ acn-sdk/
 │   ├── ARCHITECTURE.md
 │   └── QUICK_START.md
 ├── examples/
-│   └── demo_identity_flow.py
+│   ├── demo_identity_flow.py
+│   └── demo_task_flow.py
 ├── scripts/
+│   ├── start_mock_moq_relay.sh
 │   └── start_sdk_demo.sh
 ├── tests/
 │   ├── conftest.py
@@ -61,7 +65,9 @@ acn-sdk/
 - 能力 VC 模拟签发与注册
 - 机器人身份查询
 - 机器人去注册
+- 入网、任务执行、任务终止、协同请求、协同接受、任务启动
 - HTTP/WebSocket/MoQ/TaskManager 组件封装
+- 本地 `AcnAgent` + `AgentGW` + `MOQ Relay` mock 联调
 - 关键消息与状态转换日志记录
 - FastAPI 打桩测试
 
@@ -81,24 +87,42 @@ python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 pip install -e .
-uvicorn app.mock_acn_agent:app --host 127.0.0.1 --port 9010
+python3 mock/mock_acn_agent.py --host 127.0.0.1 --port 9010
+python3 mock/mock_agent_gw.py --host 127.0.0.1 --port 9002
+python3 mock/mock_moq_relay.py --host 127.0.0.1 --port 9003 --cache-dir data/moq-relay-cache
 python3 examples/demo_identity_flow.py
+python3 examples/demo_task_flow.py
 ```
 
 推荐启动顺序：
 
 1. 安装依赖并执行 `pip install -e .`
-2. 启动 `uvicorn app.mock_acn_agent:app --host 127.0.0.1 --port 9010`
-3. 运行 `python3 examples/demo_identity_flow.py` 或 `pytest`
+2. 启动 `python3 mock/mock_acn_agent.py --host 127.0.0.1 --port 9010`
+3. 启动 `python3 mock/mock_agent_gw.py --host 127.0.0.1 --port 9002`
+4. 启动 `python3 mock/mock_moq_relay.py --host 127.0.0.1 --port 9003 --cache-dir data/moq-relay-cache`
+5. 运行 `python3 examples/demo_identity_flow.py`、`python3 examples/demo_task_flow.py` 或 `pytest`
 
 Windows + PyCharm：
 
 1. 使用 PyCharm 打开项目根目录 `/home/acn/zxy` 对应工程副本。
 2. 创建 Python 3.10+ 虚拟环境。
 3. 安装 `requirements.txt`，并执行 `pip install -e .`。
-4. 新建 `uvicorn app.mock_acn_agent:app --host 127.0.0.1 --port 9010` 运行配置。
-5. 新建 `examples/demo_identity_flow.py` 运行配置。
-6. 先启动 mock 服务，再运行示例或测试。
+4. 新建 `python mock/mock_acn_agent.py --host 127.0.0.1 --port 9010` 运行配置。
+5. 新建 `python mock/mock_agent_gw.py --host 127.0.0.1 --port 9002` 运行配置。
+6. 新建 `python mock/mock_moq_relay.py --host 127.0.0.1 --port 9003 --cache-dir data/moq-relay-cache` 运行配置。
+7. 新建 `examples/demo_identity_flow.py` 和 `examples/demo_task_flow.py` 运行配置。
+8. 先启动三个 mock 服务，再运行示例或测试。
+
+`examples/demo_task_flow.py` 当前会启动两个 SDK 实例：
+
+- `AliceAgent`：发起任务、请求协同、发布 `Location` track
+- `RobotDog`：接受协同、订阅 `Location` track、接收真实 MOQ relay 转发的对象
+
+真实联调成功时，终端会出现类似输出：
+
+```text
+[RobotDog] callback message_type=MOQ_OBJECT payload={'namespace': '/task-xxxxx/did:acn:agent:...', 'track': 'Location', 'message_info': b'2026-03-30T00:00:00Z'}
+```
 
 如果不做 `pip install -e .`，则需要把项目根目录标记为 `Sources Root`。
 

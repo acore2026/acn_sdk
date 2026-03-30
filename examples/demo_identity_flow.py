@@ -16,7 +16,7 @@ def main() -> None:
         metadata={"region": "CN", "os": "Linux", "version": "1.0.0"},
     )
 
-    agent_id = sdk.register_robot_info(robot_info)
+    agent_id = sdk.register_agent_info(robot_info)
     print(f"registered agent_id={agent_id}")
 
     capability_response = sdk.register_agent_attribute(agent_id, ["可疑人员识别", "目标跟踪", "声光驱离"])
