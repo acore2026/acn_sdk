@@ -3,6 +3,8 @@ from __future__ import annotations
 import base64
 import json
 import httpx
+import time
+from collections import deque
 from pathlib import Path
 
 from cryptography import x509
@@ -27,21 +29,30 @@ class MockWebSocketClient:
         self.url = "ws://127.0.0.1:9002/ws"
         self.connected = False
         self.sent_messages: list[dict[str, object]] = []
-        self._responses = list(response_messages or [])
+        self._responses = deque(response_messages or [])
+        self._closed = False
 
     def connect(self) -> None:
         self.connected = True
+        self._closed = False
 
     def send_json(self, payload: dict[str, object]) -> None:
         self.sent_messages.append(payload)
 
     def receive_json(self) -> dict[str, object]:
-        if not self._responses:
-            raise RuntimeError("No mock websocket message available")
-        return self._responses.pop(0)
+        while True:
+            if self._responses:
+                return self._responses.popleft()
+            if self._closed:
+                raise RuntimeError("Mock websocket closed")
+            time.sleep(0.01)
 
     def disconnect(self) -> None:
         self.connected = False
+        self._closed = True
+
+    def push_message(self, payload: dict[str, object]) -> None:
+        self._responses.append(payload)
 
 class RecordingMoQClient(MoQClient):
     def __init__(self, host: str, remote_port: int, local_port: int, role: str, on_object_received=None) -> None:
@@ -330,6 +341,57 @@ def test_task_info_report_requires_join_network_for_moq_connections(sdk_environm
         raise AssertionError("Expected RuntimeError to be raised")
     finally:
         sdk.disconnect_all()
+
+
+def test_join_network_starts_background_listener_for_subscribe_track(sdk_environment: object) -> None:
+    messages: list[tuple[str, dict[str, object]]] = []
+    sdk = AcnSDK(
+        robot_name="AliceAgent",
+        on_message_received=lambda msg_type, payload: messages.append((msg_type, payload)),
+    )
+    robot_info = RobotInfo(
+        name="AliceAgent",
+        owner="+8613800138000",
+        description="AgentModel-X, SN123456",
+        priority=5,
+        metadata={},
+    )
+    agent_id = sdk.register_agent_info(robot_info)
+
+    websocket_client = MockWebSocketClient(
+        [{"type": "SETUP", "timestamp": "2025-01-01T00:00:00Z", "payload": {"status": "OK"}}]
+    )
+    moq_clients: dict[str, RecordingMoQClient] = {}
+
+    def create_moq_client(role: str, local_port: int) -> RecordingMoQClient:
+        client = RecordingMoQClient("127.0.0.1", 9003, local_port, role, sdk._handle_moq_object_received if role == "subscriber" else None)
+        moq_clients[role] = client
+        return client
+
+    sdk._create_websocket_client = lambda: websocket_client
+    sdk._create_moq_client = create_moq_client
+
+    sdk.join_network(agent_id)
+    websocket_client.push_message(
+        {
+            "type": "SUBSCRIBE_TRACK",
+            "timestamp": "2025-01-01T00:00:00Z",
+            "payload": {
+                "src_agent_id": agent_id,
+                "task_id": "task-12345",
+                "track_list": [{"namespace": f"/task-12345/{agent_id}", "track": "Location"}],
+            },
+        }
+    )
+
+    deadline = time.monotonic() + 1.0
+    while time.monotonic() < deadline and not moq_clients["subscriber"].subscribed:
+        time.sleep(0.01)
+
+    assert moq_clients["subscriber"].subscribed == [(f"/task-12345/{agent_id}", "Location", agent_id)]
+    assert messages[-1][0] == "SUBSCRIBE_TRACK"
+
+    sdk.logout_network(agent_id)
 
 
 def test_deregister_robot_sends_disconnection_when_online(sdk_environment: object) -> None:

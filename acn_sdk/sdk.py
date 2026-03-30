@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import secrets
+import threading
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -53,6 +54,8 @@ class AcnSDK:
         self._published_tracks: set[str] = set()
         self._subscribed_tracks: set[str] = set()
         self._task_registry: dict[str, dict[str, Any]] = {}
+        self._network_listener_stop = threading.Event()
+        self._network_listener_thread: threading.Thread | None = None
 
         self._apply_config()
         self._logger.info("AcnSDK initialized for robot=%s, network_status=%s", robot_name, self.network_status)
@@ -209,6 +212,7 @@ class AcnSDK:
             raise
 
         self.network_status = "ONLINE"
+        self._start_network_listener()
         self._logger.info("Network join successful for agent_id=%s", agent_id)
         return {"result": "success", "agent_id": agent_id}
 
@@ -357,13 +361,6 @@ class AcnSDK:
         )
         return {"result": "success", "task_id": task_id, "dst_agent_id": dst_agent_id}
 
-    def poll_network_message(self) -> dict[str, Any]:
-        if self.websocket_client is None:
-            raise RuntimeError("WebSocket is not connected.")
-        message = self.websocket_client.receive_json()
-        self.handle_network_message(message)
-        return message
-
     def handle_network_message(self, message: str | dict[str, Any]) -> dict[str, Any]:
         parsed_message = json.loads(message) if isinstance(message, str) else message
         envelope = WebSocketMessage.model_validate(parsed_message)
@@ -391,6 +388,7 @@ class AcnSDK:
         self._logger.info("Network components initialized without handshake. network_status=%s", self.network_status)
 
     def disconnect_all(self, close_http: bool = True) -> None:
+        self._stop_network_listener()
         if close_http:
             if self.http_client is not None:
                 self.http_client.close()
@@ -462,6 +460,48 @@ class AcnSDK:
                     "message_info": payload,
                 },
             )
+
+    def _start_network_listener(self) -> None:
+        if self.websocket_client is None:
+            raise RuntimeError("WebSocket is not connected.")
+        if self._network_listener_thread is not None and self._network_listener_thread.is_alive():
+            return
+        self._network_listener_stop = threading.Event()
+        self._network_listener_thread = threading.Thread(
+            target=self._network_listener_loop,
+            name=f"AcnSDKNetworkListener-{self.robot_name}",
+            daemon=True,
+        )
+        self._network_listener_thread.start()
+        self._logger.info("Background network listener started.")
+
+    def _stop_network_listener(self) -> None:
+        self._network_listener_stop.set()
+        if self.websocket_client is not None:
+            self.websocket_client.disconnect()
+        thread = self._network_listener_thread
+        if thread is not None and thread.is_alive() and thread is not threading.current_thread():
+            thread.join(timeout=1.0)
+        self._network_listener_thread = None
+        self._network_listener_stop.clear()
+
+    def _network_listener_loop(self) -> None:
+        while not self._network_listener_stop.is_set():
+            websocket_client = self.websocket_client
+            if websocket_client is None:
+                break
+            try:
+                message = websocket_client.receive_json()
+            except Exception:
+                if self._network_listener_stop.is_set():
+                    break
+                self._logger.exception("Background network listener stopped after websocket receive failure.")
+                break
+
+            try:
+                self.handle_network_message(message)
+            except Exception:
+                self._logger.exception("Failed to handle background network message: %s", message)
 
     def _require_local_agent(self, agent_id: str) -> None:
         if not agent_id:

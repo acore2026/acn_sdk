@@ -29,6 +29,9 @@ class IdentityApplication(BaseModel):
 
 
 class AgentCard(BaseModel):
+    pass
+
+
 class AgentDeletion(BaseModel):
     agent_id: str
     reason: str

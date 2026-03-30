@@ -15,13 +15,73 @@ def on_message(agent_name: str, message_type: str, payload: dict) -> None:
     print(f"[{agent_name}] callback message_type={message_type} payload={payload}")
 
 
-def push_ws_message(agent_id: str, message: dict) -> None:
+def _post_agent_gw_debug(path: str, payload: dict) -> None:
     with httpx.Client(timeout=5.0, trust_env=False) as client:
-        response = client.post(
-            "http://127.0.0.1:9002/debug/ws-message",
-            json={"agent_id": agent_id, "message": message},
-        )
+        response = client.post(f"http://127.0.0.1:9002{path}", json=payload)
     response.raise_for_status()
+
+
+def push_task_request_collaboration(
+    collaborator_agent_id: str,
+    initiator_agent_id: str,
+    task_id: str,
+    task_description: str,
+    initiator_skills: list[str],
+) -> None:
+    _post_agent_gw_debug(
+        "/debug/task-request-collaboration",
+        {
+            "collaborator_agent_id": collaborator_agent_id,
+            "initiator_agent_id": initiator_agent_id,
+            "task_id": task_id,
+            "task_description": task_description,
+            "initiator_skills": initiator_skills,
+        },
+    )
+
+
+def push_discover_result(initiator_agent_id: str, collaborator_ids: list[str]) -> None:
+    _post_agent_gw_debug(
+        "/debug/discover-result",
+        {
+            "initiator_agent_id": initiator_agent_id,
+            "collaborator_ids": collaborator_ids,
+        },
+    )
+
+
+def push_start_task(
+    collaborator_agent_id: str,
+    initiator_agent_id: str,
+    task_id: str,
+    task_description: str,
+) -> None:
+    _post_agent_gw_debug(
+        "/debug/start-task",
+        {
+            "collaborator_agent_id": collaborator_agent_id,
+            "initiator_agent_id": initiator_agent_id,
+            "task_id": task_id,
+            "task_description": task_description,
+        },
+    )
+
+
+def push_subscribe_track(
+    subscriber_agent_id: str,
+    publisher_agent_id: str,
+    task_id: str,
+    topic: str,
+) -> None:
+    _post_agent_gw_debug(
+        "/debug/subscribe-track",
+        {
+            "subscriber_agent_id": subscriber_agent_id,
+            "publisher_agent_id": publisher_agent_id,
+            "task_id": task_id,
+            "topic": topic,
+        },
+    )
 
 
 def build_config(base_dir: Path, moq_pub_port: int, moq_sub_port: int, identity_name: str) -> Path:
@@ -58,6 +118,23 @@ def build_config(base_dir: Path, moq_pub_port: int, moq_sub_port: int, identity_
 
 def current_timestamp_bytes() -> bytes:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z").encode("utf-8")
+
+
+def report_task_info_for_duration(
+    sdk: AcnSDK,
+    agent_id: str,
+    task_id: str,
+    topic: str,
+    duration_seconds: float,
+    interval_seconds: float = 1.0,
+) -> None:
+    deadline = time.monotonic() + duration_seconds
+    while True:
+        response = sdk.task_info_report(agent_id, task_id, topic, current_timestamp_bytes())
+        print(response)
+        if time.monotonic() >= deadline:
+            break
+        time.sleep(interval_seconds)
 
 
 def main() -> None:
@@ -111,70 +188,38 @@ def main() -> None:
 
     print(initiator.request_task_collaboration(initiator_id, task_id, ["声光驱离"]))
 
-    push_ws_message(
-        collaborator_id,
-        {
-            "type": "TASK_REQUEST_COLLABORATION",
-            "timestamp": "2026-03-30T00:00:00Z",
-            "payload": {
-                "src_agent_id": "ARF",
-                "dst_agent_id": collaborator_id,
-                "task_id": task_id,
-                "task_description": "协同声光驱离",
-                "agent_card": {"agent_id": initiator_id, "skill": ["可疑人员识别", "目标跟踪"]},
-            },
-        },
+    push_task_request_collaboration(
+        collaborator_agent_id=collaborator_id,
+        initiator_agent_id=initiator_id,
+        task_id=task_id,
+        task_description="协同声光驱离",
+        initiator_skills=["可疑人员识别", "目标跟踪"],
     )
-    collaborator.poll_network_message()
+    time.sleep(0.2)
     print(collaborator.accept_task_collaboration(collaborator_id, task_id))
 
-    push_ws_message(
-        initiator_id,
-        {
-            "type": "DISCOVER_RESULT",
-            "timestamp": "2026-03-30T00:00:00Z",
-            "payload": {
-                "src_agent_id": "ARF",
-                "dst_agent_id": initiator_id,
-                "discover_result": [collaborator_id],
-            },
-        },
-    )
-    initiator.poll_network_message()
-
-    print(initiator.start_task(initiator_id, collaborator_id, task_id, "协同声光驱离"))
-    push_ws_message(
-        collaborator_id,
-        {
-            "type": "START_TASK",
-            "timestamp": "2026-03-30T00:00:00Z",
-            "payload": {
-                "src_agent_id": initiator_id,
-                "dst_agent_id": collaborator_id,
-                "task_id": task_id,
-                "task_description": "协同声光驱离",
-            },
-        },
-    )
-    collaborator.poll_network_message()
-    collaborator.request_task_execution(collaborator_id, "协同声光驱离", task_id=task_id)
-
-    push_ws_message(
-        collaborator_id,
-        {
-            "type": "SUBSCRIBE_TRACK",
-            "timestamp": "2026-03-30T00:00:00Z",
-            "payload": {
-                "src_agent_id": initiator_id,
-                "task_id": task_id,
-                "track_list": [{"namespace": f"/{task_id}/{initiator_id}", "track": "Location"}],
-            },
-        },
-    )
-    collaborator.poll_network_message()
+    push_discover_result(initiator_agent_id=initiator_id, collaborator_ids=[collaborator_id])
     time.sleep(0.2)
 
-    initiator.task_info_report(initiator_id, task_id, "Location", current_timestamp_bytes())
+    print(initiator.start_task(initiator_id, collaborator_id, task_id, "协同声光驱离"))
+    push_start_task(
+        collaborator_agent_id=collaborator_id,
+        initiator_agent_id=initiator_id,
+        task_id=task_id,
+        task_description="协同声光驱离",
+    )
+    time.sleep(0.2)
+    collaborator.request_task_execution(collaborator_id, "协同声光驱离", task_id=task_id)
+
+    push_subscribe_track(
+        subscriber_agent_id=collaborator_id,
+        publisher_agent_id=initiator_id,
+        task_id=task_id,
+        topic="Location",
+    )
+    time.sleep(0.2)
+
+    report_task_info_for_duration(initiator, initiator_id, task_id, "Location", duration_seconds=30.0)
     collaborator.moq_sub_client.pump(1.0)
 
     collaborator.request_terminate_task(collaborator_id, task_id, "demo finished")

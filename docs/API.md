@@ -176,6 +176,7 @@ POST /acn-agent/v1/agent-deletions
 - 创建 `WebSocketClient`，连接 `ws://<network_ip>:<agent_gw_ws_port><path>`
 - 发送 `SETUP` 消息，必须收到对端 `SETUP` 且 `payload.status == "OK"`
 - 初始化 `moq_pub_client`、`moq_sub_client`、`TaskManager`
+- 成功入网后自动启动后台 WebSocket 监听线程，后续下行消息默认自动处理
 - 全部成功后将状态切换为 `ONLINE`
 
 返回示例：
@@ -253,10 +254,6 @@ POST /arf/v1/agent-discoveries
 ### `start_task(agent_id: str, dst_agent_id: str, task_id: str, task_description: str) -> dict[str, Any]`
 
 发送 WebSocket `START_TASK`，用于通知协作方开始执行任务。
-
-### `poll_network_message() -> dict[str, Any]`
-
-从 WebSocket 读取一条消息并立即交给 SDK 内部处理。
 
 ### `handle_network_message(message: str | dict[str, Any]) -> dict[str, Any]`
 

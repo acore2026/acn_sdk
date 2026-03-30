@@ -22,6 +22,33 @@ class DebugPushRequest(BaseModel):
     message: dict[str, Any]
 
 
+class DebugTaskRequestCollaborationRequest(BaseModel):
+    collaborator_agent_id: str
+    initiator_agent_id: str
+    task_id: str
+    task_description: str
+    initiator_skills: list[str]
+
+
+class DebugDiscoverResultRequest(BaseModel):
+    initiator_agent_id: str
+    collaborator_ids: list[str]
+
+
+class DebugStartTaskRequest(BaseModel):
+    collaborator_agent_id: str
+    initiator_agent_id: str
+    task_id: str
+    task_description: str
+
+
+class DebugSubscribeTrackRequest(BaseModel):
+    subscriber_agent_id: str
+    publisher_agent_id: str
+    task_id: str
+    topic: str
+
+
 class ConnectionRegistry:
     def __init__(self) -> None:
         self._connections: dict[str, WebSocket] = {}
@@ -87,6 +114,85 @@ async def debug_push_message(payload: DebugPushRequest) -> dict[str, Any]:
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=f"agent not connected: {payload.agent_id}") from exc
     return {"result": "success", "agent_id": payload.agent_id}
+
+
+@app.post("/debug/task-request-collaboration")
+async def debug_task_request_collaboration(payload: DebugTaskRequestCollaborationRequest) -> dict[str, Any]:
+    message = _ws_message(
+        "TASK_REQUEST_COLLABORATION",
+        {
+            "src_agent_id": "ARF",
+            "dst_agent_id": payload.collaborator_agent_id,
+            "task_id": payload.task_id,
+            "task_description": payload.task_description,
+            "agent_card": {
+                "agent_id": payload.initiator_agent_id,
+                "skill": payload.initiator_skills,
+            },
+        },
+    )
+    try:
+        await registry.send_to(payload.collaborator_agent_id, message)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=f"agent not connected: {payload.collaborator_agent_id}") from exc
+    return {"result": "success", "agent_id": payload.collaborator_agent_id, "task_id": payload.task_id}
+
+
+@app.post("/debug/discover-result")
+async def debug_discover_result(payload: DebugDiscoverResultRequest) -> dict[str, Any]:
+    message = _ws_message(
+        "DISCOVER_RESULT",
+        {
+            "src_agent_id": "ARF",
+            "dst_agent_id": payload.initiator_agent_id,
+            "discover_result": payload.collaborator_ids,
+        },
+    )
+    try:
+        await registry.send_to(payload.initiator_agent_id, message)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=f"agent not connected: {payload.initiator_agent_id}") from exc
+    return {"result": "success", "agent_id": payload.initiator_agent_id, "discover_result": payload.collaborator_ids}
+
+
+@app.post("/debug/start-task")
+async def debug_start_task(payload: DebugStartTaskRequest) -> dict[str, Any]:
+    message = _ws_message(
+        "START_TASK",
+        {
+            "src_agent_id": payload.initiator_agent_id,
+            "dst_agent_id": payload.collaborator_agent_id,
+            "task_id": payload.task_id,
+            "task_description": payload.task_description,
+        },
+    )
+    try:
+        await registry.send_to(payload.collaborator_agent_id, message)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=f"agent not connected: {payload.collaborator_agent_id}") from exc
+    return {"result": "success", "agent_id": payload.collaborator_agent_id, "task_id": payload.task_id}
+
+
+@app.post("/debug/subscribe-track")
+async def debug_subscribe_track(payload: DebugSubscribeTrackRequest) -> dict[str, Any]:
+    message = _ws_message(
+        "SUBSCRIBE_TRACK",
+        {
+            "src_agent_id": payload.publisher_agent_id,
+            "task_id": payload.task_id,
+            "track_list": [
+                {
+                    "namespace": f"/{payload.task_id}/{payload.publisher_agent_id}",
+                    "track": payload.topic,
+                }
+            ],
+        },
+    )
+    try:
+        await registry.send_to(payload.subscriber_agent_id, message)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=f"agent not connected: {payload.subscriber_agent_id}") from exc
+    return {"result": "success", "agent_id": payload.subscriber_agent_id, "task_id": payload.task_id, "topic": payload.topic}
 
 
 def _ws_message(message_type: str, payload: dict[str, Any]) -> dict[str, Any]:
