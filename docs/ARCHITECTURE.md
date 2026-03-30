@@ -61,8 +61,10 @@ sequenceDiagram
     Issuer-->>SDK: capability_vcs
     SDK->>ID: 保存 capability_vcs
     SDK->>HTTP: POST /arf/v1/agent-cards
-    HTTP->>ARF: 注册能力
-    ARF-->>HTTP: success
+    HTTP->>Agent: 转发到 ARF
+    Agent->>ARF: 注册能力
+    ARF-->>Agent: success
+    Agent-->>HTTP: success
     HTTP-->>SDK: success
 
     Robot->>SDK: join_network(agent_id)

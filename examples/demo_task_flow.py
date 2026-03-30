@@ -84,19 +84,12 @@ def push_subscribe_track(
     )
 
 
-def build_config(base_dir: Path, moq_pub_port: int, moq_sub_port: int, identity_name: str) -> Path:
+def build_config(base_dir: Path, identity_name: str) -> Path:
     config = SDKConfig.model_validate(
         {
-            "sdk": {
-                "http_port": 8001,
-                "ws_port": 8002,
-                "moq_pub_port": moq_pub_port,
-                "moq_sub_port": moq_sub_port,
-            },
             "network": {
                 "network_ip": "127.0.0.1",
                 "acn_agent_port": 9010,
-                "arf_port": 9001,
                 "agent_gw_ws_port": 9002,
                 "agent_gw_moq_port": 9003,
                 "web_ui_port": 9004,
@@ -140,8 +133,8 @@ def report_task_info_for_duration(
 def main() -> None:
     base_dir = Path(tempfile.mkdtemp(prefix="acn-sdk-demo-"))
     print(f"demo_runtime_dir={base_dir}")
-    initiator_config = build_config(base_dir, moq_pub_port=8103, moq_sub_port=8104, identity_name="initiator")
-    collaborator_config = build_config(base_dir, moq_pub_port=8203, moq_sub_port=8204, identity_name="collaborator")
+    initiator_config = build_config(base_dir, identity_name="initiator")
+    collaborator_config = build_config(base_dir, identity_name="collaborator")
 
     initiator = AcnSDK(
         robot_name="AliceAgent",

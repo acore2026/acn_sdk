@@ -6,17 +6,9 @@ import yaml
 from pydantic import BaseModel, Field
 
 
-class SDKPortConfig(BaseModel):
-    http_port: int = 8001
-    ws_port: int = 8002
-    moq_pub_port: int = 8003
-    moq_sub_port: int = 8004
-
-
 class NetworkConfig(BaseModel):
     network_ip: str = "127.0.0.1"
     acn_agent_port: int = 9010
-    arf_port: int = 9001
     agent_gw_ws_port: int = 9002
     agent_gw_moq_port: int = 9003
     web_ui_port: int = 9004
@@ -25,10 +17,6 @@ class NetworkConfig(BaseModel):
     @property
     def acn_agent_url(self) -> str:
         return f"http://{self.network_ip}:{self.acn_agent_port}"
-
-    @property
-    def arf_url(self) -> str:
-        return f"http://{self.network_ip}:{self.arf_port}"
 
     @property
     def agent_gw_ws_url(self) -> str:
@@ -47,7 +35,6 @@ class StorageConfig(BaseModel):
 
 
 class SDKConfig(BaseModel):
-    sdk: SDKPortConfig = Field(default_factory=SDKPortConfig)
     network: NetworkConfig = Field(default_factory=NetworkConfig)
     storage: StorageConfig = Field(default_factory=StorageConfig)
     log_level: str = "INFO"

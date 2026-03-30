@@ -45,7 +45,6 @@ class AcnSDK:
         self.on_message_received = on_message_received
         self.credential_issuer = CredentialIssuer()
         self.http_client: HttpClient | None = None
-        self.arf_http_client: HttpClient | None = None
         self.websocket_client: WebSocketClient | None = None
         self.moq_pub_client: MoQClient | None = None
         self.moq_sub_client: MoQClient | None = None
@@ -60,13 +59,8 @@ class AcnSDK:
         self._apply_config()
         self._logger.info("AcnSDK initialized for robot=%s, network_status=%s", robot_name, self.network_status)
         self._logger.info(
-            "SDK local ports http=%s ws=%s moq_pub=%s moq_sub=%s, network acn_agent=%s arf=%s ws=%s moq=%s web_ui=%s",
-            self.config.sdk.http_port,
-            self.config.sdk.ws_port,
-            self.config.sdk.moq_pub_port,
-            self.config.sdk.moq_sub_port,
+            "SDK network endpoints acn_agent=%s ws=%s moq=%s web_ui=%s",
             self.config.network.acn_agent_port,
-            self.config.network.arf_port,
             self.config.network.agent_gw_ws_port,
             self.config.network.agent_gw_moq_port,
             self.config.network.web_ui_port,
@@ -143,9 +137,9 @@ class AcnSDK:
             signature=sign_timestamp(self.config.storage.private_key_file, timestamp),
             vc_list=vc_list,
         )
-        if self.arf_http_client is None:
-            raise RuntimeError("ARF HTTP client is not initialized.")
-        response = self.arf_http_client.register_agent_attribute(payload)
+        if self.http_client is None:
+            raise RuntimeError("HTTP client is not initialized.")
+        response = self.http_client.register_agent_attribute(payload)
         self._logger.info("Robot attribute registered. response=%s", response)
         return response
 
@@ -190,8 +184,8 @@ class AcnSDK:
             raise RuntimeError("Robot is already online.")
 
         self.websocket_client = self._create_websocket_client()
-        self.moq_pub_client = self._create_moq_client("publisher", self.config.sdk.moq_pub_port)
-        self.moq_sub_client = self._create_moq_client("subscriber", self.config.sdk.moq_sub_port)
+        self.moq_pub_client = self._create_moq_client("publisher")
+        self.moq_sub_client = self._create_moq_client("subscriber")
         self.task_manager = TaskManager()
 
         try:
@@ -316,9 +310,9 @@ class AcnSDK:
             required_capabilities=capability_list,
             timestamp=self._utc_timestamp(),
         )
-        if self.arf_http_client is None:
-            raise RuntimeError("ARF HTTP client is not initialized.")
-        response = self.arf_http_client.request_task_collaboration(request)
+        if self.http_client is None:
+            raise RuntimeError("HTTP client is not initialized.")
+        response = self.http_client.request_task_collaboration(request)
         self._logger.info("Task collaboration requested. task_id=%s response=%s", task_id, response)
         return response
 
@@ -381,8 +375,8 @@ class AcnSDK:
 
     def connect_network(self) -> None:
         self.websocket_client = self._create_websocket_client()
-        self.moq_pub_client = self._create_moq_client("publisher", self.config.sdk.moq_pub_port)
-        self.moq_sub_client = self._create_moq_client("subscriber", self.config.sdk.moq_sub_port)
+        self.moq_pub_client = self._create_moq_client("publisher")
+        self.moq_sub_client = self._create_moq_client("subscriber")
         self.task_manager = TaskManager()
         self.network_status = "ONLINE"
         self._logger.info("Network components initialized without handshake. network_status=%s", self.network_status)
@@ -392,8 +386,6 @@ class AcnSDK:
         if close_http:
             if self.http_client is not None:
                 self.http_client.close()
-            if self.arf_http_client is not None:
-                self.arf_http_client.close()
         if self.websocket_client is not None:
             self.websocket_client.disconnect()
             self.websocket_client = None
@@ -416,7 +408,6 @@ class AcnSDK:
         self._logger = logging.getLogger(self.__class__.__name__)
         self.identity_manager = IdentityManager(self.config.storage.identity_file)
         self.http_client = HttpClient(self.config.network.acn_agent_url)
-        self.arf_http_client = HttpClient(self.config.network.arf_url)
         ensure_ec_keypair(
             self.config.storage.private_key_file,
             self.config.storage.public_key_file,
@@ -429,11 +420,10 @@ class AcnSDK:
     def _create_websocket_client(self) -> WebSocketClient:
         return WebSocketClient(self.config.network.agent_gw_ws_url)
 
-    def _create_moq_client(self, role: str, local_port: int) -> MoQClient:
+    def _create_moq_client(self, role: str) -> MoQClient:
         return MoQClient(
             host=self.config.network.network_ip,
             remote_port=self.config.network.agent_gw_moq_port,
-            local_port=local_port,
             role=role,
             on_object_received=self._handle_moq_object_received if role == "subscriber" else None,
         )

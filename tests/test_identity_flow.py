@@ -55,10 +55,9 @@ class MockWebSocketClient:
         self._responses.append(payload)
 
 class RecordingMoQClient(MoQClient):
-    def __init__(self, host: str, remote_port: int, local_port: int, role: str, on_object_received=None) -> None:
+    def __init__(self, host: str, remote_port: int, role: str, on_object_received=None) -> None:
         self.host = host
         self.remote_port = remote_port
-        self.local_port = local_port
         self.role = role
         self.on_object_received = on_object_received
         self.connected = False
@@ -204,7 +203,6 @@ def test_connect_network_uses_new_config_ports(sdk_environment: object) -> None:
     sdk = create_sdk()
 
     assert sdk.config.network.acn_agent_url == "http://127.0.0.1:9010"
-    assert sdk.config.network.arf_url == "http://127.0.0.1:9001"
 
     sdk.connect_network()
 
@@ -214,12 +212,10 @@ def test_connect_network_uses_new_config_ports(sdk_environment: object) -> None:
     assert sdk.moq_pub_client is not None
     assert sdk.moq_pub_client.host == "127.0.0.1"
     assert sdk.moq_pub_client.remote_port == 9003
-    assert sdk.moq_pub_client.local_port == 8003
     assert sdk.moq_pub_client.role == "publisher"
     assert sdk.moq_sub_client is not None
     assert sdk.moq_sub_client.host == "127.0.0.1"
     assert sdk.moq_sub_client.remote_port == 9003
-    assert sdk.moq_sub_client.local_port == 8004
     assert sdk.moq_sub_client.role == "subscriber"
 
     sdk.disconnect_all()
@@ -244,8 +240,8 @@ def test_join_network_and_task_flow(sdk_environment: object) -> None:
     moq_clients: dict[str, RecordingMoQClient] = {}
     sdk._create_websocket_client = lambda: websocket_client
 
-    def create_moq_client(role: str, local_port: int) -> RecordingMoQClient:
-        client = RecordingMoQClient("127.0.0.1", 9003, local_port, role, on_object_received=sdk._handle_moq_object_received if role == "subscriber" else None)
+    def create_moq_client(role: str) -> RecordingMoQClient:
+        client = RecordingMoQClient("127.0.0.1", 9003, role, on_object_received=sdk._handle_moq_object_received if role == "subscriber" else None)
         moq_clients[role] = client
         return client
 
@@ -363,8 +359,8 @@ def test_join_network_starts_background_listener_for_subscribe_track(sdk_environ
     )
     moq_clients: dict[str, RecordingMoQClient] = {}
 
-    def create_moq_client(role: str, local_port: int) -> RecordingMoQClient:
-        client = RecordingMoQClient("127.0.0.1", 9003, local_port, role, sdk._handle_moq_object_received if role == "subscriber" else None)
+    def create_moq_client(role: str) -> RecordingMoQClient:
+        client = RecordingMoQClient("127.0.0.1", 9003, role, sdk._handle_moq_object_received if role == "subscriber" else None)
         moq_clients[role] = client
         return client
 
@@ -408,7 +404,7 @@ def test_deregister_robot_sends_disconnection_when_online(sdk_environment: objec
         [{"type": "SETUP", "timestamp": "2025-01-01T00:00:00Z", "payload": {"status": "OK"}}]
     )
     sdk._create_websocket_client = lambda: websocket_client
-    sdk._create_moq_client = lambda role, local_port: RecordingMoQClient("127.0.0.1", 9003, local_port, role)
+    sdk._create_moq_client = lambda role: RecordingMoQClient("127.0.0.1", 9003, role)
 
     sdk.join_network(agent_id)
     response = sdk.deregister_robot(agent_id, "retired")
@@ -423,7 +419,6 @@ def test_reload_config_reflects_yaml_changes(sdk_environment: object) -> None:
     sdk = create_sdk()
 
     config.network.acn_agent_port = 9110
-    config.network.arf_port = 9111
     config.network.agent_gw_ws_port = 9012
     config.storage.log_dir = str(Path(config.storage.identity_file).parent / "alt-logs")
     config_path = Path(config.storage.identity_file).parent / "config.yaml"
@@ -432,10 +427,8 @@ def test_reload_config_reflects_yaml_changes(sdk_environment: object) -> None:
     sdk.reload_config()
 
     assert sdk.config.network.acn_agent_port == 9110
-    assert sdk.config.network.arf_port == 9111
     assert sdk.config.network.agent_gw_ws_port == 9012
     assert sdk.http_client.base_url == "http://127.0.0.1:9110"
-    assert sdk.arf_http_client.base_url == "http://127.0.0.1:9111"
 
 
 def test_http_client_disables_env_proxy_inheritance() -> None:

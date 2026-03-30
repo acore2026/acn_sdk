@@ -5,6 +5,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
+import httpx
 from fastapi import FastAPI
 from pydantic import BaseModel
 import uvicorn
@@ -15,6 +16,7 @@ from acn_sdk.logging_config import setup_logging
 setup_logging()
 logger = logging.getLogger("mock_acn_agent")
 app = FastAPI(title="Mock ACN Agent", version="0.1.0")
+ARF_BASE_URL = "http://127.0.0.1:9001"
 
 
 class IdentityApplication(BaseModel):
@@ -55,6 +57,15 @@ class TaskTermination(BaseModel):
     force: bool = False
 
 
+def _forward_to_arf(path: str, payload: dict) -> dict:
+    with httpx.Client(timeout=10.0, trust_env=False) as client:
+        response = client.post(f"{ARF_BASE_URL}{path}", json=payload)
+    result = response.json()
+    if response.status_code >= 400:
+        raise RuntimeError(f"ARF request failed: {response.status_code}, {result}")
+    return result
+
+
 @app.post("/idm/v1/identity-applications")
 def create_identity_application(payload: IdentityApplication) -> dict:
     logger.info("Received identity application: %s", payload.model_dump(mode="json"))
@@ -83,6 +94,22 @@ def create_identity_application(payload: IdentityApplication) -> dict:
         },
     }
     logger.info("Responding identity application: %s", response)
+    return response
+
+
+@app.post("/arf/v1/agent-cards")
+def create_agent_card(payload: dict) -> dict:
+    logger.info("Forwarding agent card registration to ARF: %s", payload)
+    response = _forward_to_arf("/arf/v1/agent-cards", payload)
+    logger.info("Responding forwarded agent card registration: %s", response)
+    return response
+
+
+@app.post("/arf/v1/agent-discoveries")
+def request_agent_discovery(payload: dict) -> dict:
+    logger.info("Forwarding agent discovery request to ARF: %s", payload)
+    response = _forward_to_arf("/arf/v1/agent-discoveries", payload)
+    logger.info("Responding forwarded agent discovery request: %s", response)
     return response
 
 @app.post("/acn-agent/v1/agent-deletions")
@@ -129,11 +156,15 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Start the mock ACN Agent service.")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=9010)
+    parser.add_argument("--arf-host", default="127.0.0.1")
+    parser.add_argument("--arf-port", type=int, default=9001)
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
+    global ARF_BASE_URL
+    ARF_BASE_URL = f"http://{args.arf_host}:{args.arf_port}"
     uvicorn.run(app, host=args.host, port=args.port)
 
 

@@ -88,6 +88,7 @@ POST /arf/v1/agent-cards
 
 说明：
 
+- SDK 通过 `AcnAgent` 的 HTTP 入口发起请求，表面路径仍然是 `/arf/v1/agent-cards`，由 `AcnAgent` 转发到 `ARF`。
 - 原始需求中出现 `agent—cards`，其中连接符疑似排版字符；工程中统一采用标准路径 `/arf/v1/agent-cards`。
 - 调用前会校验传入的 `agent_id` 必须与本机已注册身份一致，否则直接抛出 `ValueError`
 - 当前请求体包含 `agent_id`、`timestamp`、`signature`、`signature_encoding`、`vc_list`
@@ -247,6 +248,10 @@ POST /acn-agent/v1/task-execution-terminations
 POST /arf/v1/agent-discoveries
 ```
 
+说明：
+
+- SDK 通过 `AcnAgent` 的 HTTP 入口发起请求，表面路径仍然是 `/arf/v1/agent-discoveries`，由 `AcnAgent` 转发到 `ARF`。
+
 ### `accept_task_collaboration(agent_id: str, task_id: str) -> dict[str, Any]`
 
 接受协同任务，请求体通过 WebSocket 发送 `TASK_ACCEPT_COLLABORATION`。
@@ -290,10 +295,6 @@ config/config.yaml
 
 字段说明：
 
-- `sdk.http_port`：AcnSDK 本地 HTTP 端口
-- `sdk.ws_port`：AcnSDK 本地 WebSocket 端口
-- `sdk.moq_pub_port`：AcnSDK 本地 MoQ 发布端口
-- `sdk.moq_sub_port`：AcnSDK 本地 MoQ 订阅端口
 - `network.network_ip`：网端 IP
 - `network.acn_agent_port`：AcnAgent HTTP 端口
 - `network.agent_gw_ws_port`：AgentGW WebSocket 端口

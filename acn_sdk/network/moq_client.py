@@ -13,13 +13,11 @@ class MoQClient:
         self,
         host: str,
         remote_port: int,
-        local_port: int,
         role: str,
         on_object_received: Callable[[str, str, bytes], None] | None = None,
     ) -> None:
         self.host = host
         self.remote_port = remote_port
-        self.local_port = local_port
         self.role = role
         self.on_object_received = on_object_received
         self._logger = logging.getLogger(self.__class__.__name__)
@@ -36,9 +34,8 @@ class MoQClient:
 
     def connect(self) -> None:
         self._logger.info(
-            "Connecting MoQ client role=%s local_port=%s remote=%s:%s",
+            "Connecting MoQ client role=%s remote=%s:%s",
             self.role,
-            self.local_port,
             self.host,
             self.remote_port,
         )
@@ -78,9 +75,8 @@ class MoQClient:
 
         self._connected = True
         self._logger.info(
-            "MoQ client connected role=%s local_port=%s remote=%s:%s",
+            "MoQ client connected role=%s remote=%s:%s",
             self.role,
-            self.local_port,
             self.host,
             self.remote_port,
         )
@@ -160,9 +156,8 @@ class MoQClient:
 
     def disconnect(self) -> None:
         self._logger.info(
-            "Disconnecting MoQ client role=%s local_port=%s remote=%s:%s",
+            "Disconnecting MoQ client role=%s remote=%s:%s",
             self.role,
-            self.local_port,
             self.host,
             self.remote_port,
         )
@@ -184,9 +179,8 @@ class MoQClient:
         self._publisher = None
         self._subscriber = None
         self._logger.info(
-            "MoQ client disconnected role=%s local_port=%s remote=%s:%s",
+            "MoQ client disconnected role=%s remote=%s:%s",
             self.role,
-            self.local_port,
             self.host,
             self.remote_port,
         )

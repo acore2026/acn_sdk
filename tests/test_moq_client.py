@@ -76,7 +76,7 @@ def test_moq_publisher_client_uses_real_track_encoding(monkeypatch) -> None:
 
     monkeypatch.setattr(moq_client_module, "MOQPublisher", FakePublisher)
 
-    client = MoQClient("127.0.0.1", 9003, 8003, "publisher")
+    client = MoQClient("127.0.0.1", 9003, "publisher")
     try:
         client.connect()
         client.publish("/task-123/agent-1", "Location")
@@ -102,7 +102,6 @@ def test_moq_subscriber_client_forwards_objects(monkeypatch) -> None:
     client = MoQClient(
         "127.0.0.1",
         9003,
-        8004,
         "subscriber",
         on_object_received=lambda namespace, track, payload: received_messages.append((namespace, track, payload)),
     )
@@ -125,8 +124,8 @@ def test_moq_client_disconnect_cleans_up_publications_and_subscriptions(monkeypa
     monkeypatch.setattr(moq_client_module, "MOQPublisher", FakePublisher)
     monkeypatch.setattr(moq_client_module, "MOQSubscriber", FakeSubscriber)
 
-    publisher = MoQClient("127.0.0.1", 9003, 8003, "publisher")
-    subscriber = MoQClient("127.0.0.1", 9003, 8004, "subscriber")
+    publisher = MoQClient("127.0.0.1", 9003, "publisher")
+    subscriber = MoQClient("127.0.0.1", 9003, "subscriber")
 
     publisher.connect()
     subscriber.connect()

@@ -1,6 +1,6 @@
 # ACN SDK
 
-ACN SDK 是运行在机器人端侧的 Python 组件，用于与核心网侧 `AcnAgent` 和 `AgentGW` 通信。本项目当前只实现 SDK 侧能力，核心网相关部件通过 FastAPI 打桩模拟。
+ACN SDK 是运行在机器人端侧的 Python 组件，用于与核心网侧 `AcnAgent` 和 `AgentGW` 通信。本项目当前只实现 SDK 侧能力，核心网相关部件通过 FastAPI 打桩模拟。SDK 的所有 HTTP 请求统一发送到 `AcnAgent`，由 `AcnAgent` 转发到 `ARF` 或直接处理。
 
 当前版本已将 SDK 包名统一为 `acn_sdk`，并按业务域进行垂直拆分：
 
@@ -38,6 +38,7 @@ acn-sdk/
 │       └── task_manager.py
 ├── mock/
 │   ├── mock_acn_agent.py
+│   ├── mock_arf.py
 │   ├── mock_agent_gw.py
 │   └── mock_moq_relay.py
 ├── config/
@@ -62,7 +63,7 @@ acn-sdk/
 ## 功能范围
 
 - 机器人身份申请与本地持久化
-- 能力 VC 模拟签发与注册
+- 能力 VC 模拟签发与注册，由 `AcnAgent` 转发到 `ARF`
 - 机器人身份查询
 - 机器人去注册
 - 入网、任务执行、任务终止、协同请求、协同接受、任务启动
@@ -87,8 +88,8 @@ python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 pip install -e .
-python3 mock/mock_acn_agent.py --host 127.0.0.1 --port 9010
 python3 mock/mock_arf.py --host 127.0.0.1 --port 9001
+python3 mock/mock_acn_agent.py --host 127.0.0.1 --port 9010 --arf-host 127.0.0.1 --arf-port 9001
 python3 mock/mock_agent_gw.py --host 127.0.0.1 --port 9002
 python3 mock/mock_moq_relay.py --host 127.0.0.1 --port 9003 --cache-dir data/moq-relay-cache
 python3 examples/demo_identity_flow.py
@@ -98,8 +99,8 @@ python3 examples/demo_task_flow.py
 推荐启动顺序：
 
 1. 安装依赖并执行 `pip install -e .`
-2. 启动 `python3 mock/mock_acn_agent.py --host 127.0.0.1 --port 9010`
-3. 启动 `python3 mock/mock_arf.py --host 127.0.0.1 --port 9001`
+2. 启动 `python3 mock/mock_arf.py --host 127.0.0.1 --port 9001`
+3. 启动 `python3 mock/mock_acn_agent.py --host 127.0.0.1 --port 9010 --arf-host 127.0.0.1 --arf-port 9001`
 4. 启动 `python3 mock/mock_agent_gw.py --host 127.0.0.1 --port 9002`
 5. 启动 `python3 mock/mock_moq_relay.py --host 127.0.0.1 --port 9003 --cache-dir data/moq-relay-cache`
 6. 运行 `python3 examples/demo_identity_flow.py`、`python3 examples/demo_task_flow.py` 或 `pytest`
@@ -109,8 +110,8 @@ Windows + PyCharm：
 1. 使用 PyCharm 打开项目根目录 `/home/acn/zxy` 对应工程副本。
 2. 创建 Python 3.10+ 虚拟环境。
 3. 安装 `requirements.txt`，并执行 `pip install -e .`。
-4. 新建 `python mock/mock_acn_agent.py --host 127.0.0.1 --port 9010` 运行配置。
-5. 新建 `python mock/mock_arf.py --host 127.0.0.1 --port 9001` 运行配置。
+4. 新建 `python mock/mock_arf.py --host 127.0.0.1 --port 9001` 运行配置。
+5. 新建 `python mock/mock_acn_agent.py --host 127.0.0.1 --port 9010 --arf-host 127.0.0.1 --arf-port 9001` 运行配置。
 6. 新建 `python mock/mock_agent_gw.py --host 127.0.0.1 --port 9002` 运行配置。
 7. 新建 `python mock/mock_moq_relay.py --host 127.0.0.1 --port 9003 --cache-dir data/moq-relay-cache` 运行配置。
 8. 新建 `examples/demo_identity_flow.py` 和 `examples/demo_task_flow.py` 运行配置。
@@ -139,7 +140,6 @@ sdk = AcnSDK(robot_name="AliceAgent")
 
 当前配置文件 [config.yaml](/home/acn/zxy/config/config.yaml) 已调整为：
 
-- SDK 自身端口：`http_port=8001`、`ws_port=8002`、`moq_pub_port=8003`、`moq_sub_port=8004`
 - 网端信息：`network_ip=127.0.0.1`、`acn_agent_port=9010`、`agent_gw_ws_port=9002`、`agent_gw_moq_port=9003`、`web_ui_port=9004`
 - `acn_sdk/config.py` 只提供配置模型和默认值，不是运行时入口
 - 运行时优先读取 `config/config.yaml`；修改后可在代码里调用 `sdk.reload_config()` 立即重载
@@ -154,7 +154,7 @@ pytest
 
 - SDK 初始化时自动生成并保存 EC 公私钥
 - 身份注册会持久化 `agent_id` 和 `vc0`，请求体中的 `signature` 仅基于 `timestamp` 生成，编码采用 `base64`
-- 能力注册会生成多个能力 VC，并按 `vc_list` 发送到 `/arf/v1/agent-cards`，请求体字段顺序为 `agent_id`、`priority`、`timestamp`、`signature`、`signature_encoding`、`vc_list`
+- 能力注册会生成多个能力 VC，并按 `vc_list` 发送到 `/arf/v1/agent-cards`，SDK 仍然通过 `AcnAgent` 的 HTTP 入口发起请求，由 `AcnAgent` 转发到 `ARF`，请求体字段顺序为 `agent_id`、`priority`、`timestamp`、`signature`、`signature_encoding`、`vc_list`
 - 去注册只清理身份状态，不删除本地密钥，请求体中的 `signature` 仅基于 `timestamp` 生成，编码采用 `base64`
 
 接口请求约定与最新示例以 [docs/API.md](docs/API.md) 为准。
