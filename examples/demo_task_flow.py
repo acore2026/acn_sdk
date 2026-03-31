@@ -1,8 +1,8 @@
 from __future__ import annotations
 
+import json
 import tempfile
 import time
-from datetime import datetime, timezone
 from pathlib import Path
 
 import httpx
@@ -109,8 +109,13 @@ def build_config(base_dir: Path, identity_name: str) -> Path:
     return config_path
 
 
-def current_timestamp_bytes() -> bytes:
-    return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z").encode("utf-8")
+def current_location_bytes() -> bytes:
+    payload = {
+        "longitude": 116.404,
+        "latitude": 39.915,
+        "altitude": 50.5,
+    }
+    return json.dumps(payload, ensure_ascii=False).encode("utf-8")
 
 
 def report_task_info_for_duration(
@@ -123,7 +128,7 @@ def report_task_info_for_duration(
 ) -> None:
     deadline = time.monotonic() + duration_seconds
     while True:
-        response = sdk.task_info_report(agent_id, task_id, topic, current_timestamp_bytes())
+        response = sdk.task_info_report(agent_id, task_id, topic, current_location_bytes())
         print(response)
         if time.monotonic() >= deadline:
             break
@@ -145,7 +150,7 @@ def main() -> None:
         config_path=collaborator_config,
     )
 
-    initiator_id = initiator.register_agent_info(
+    initiator_ok, initiator_id = initiator.register_agent_info(
         RobotInfo(
             name="AliceAgent",
             owner="13800138000",
@@ -154,7 +159,7 @@ def main() -> None:
             metadata={"region": "CN", "role": "initiator"},
         )
     )
-    collaborator_id = collaborator.register_agent_info(
+    collaborator_ok, collaborator_id = collaborator.register_agent_info(
         RobotInfo(
             name="RobotDog",
             owner="13800138111",
@@ -163,6 +168,10 @@ def main() -> None:
             metadata={"region": "CN", "role": "collaborator"},
         )
     )
+    if not initiator_ok:
+        raise RuntimeError(initiator_id)
+    if not collaborator_ok:
+        raise RuntimeError(collaborator_id)
     print(f"initiator_id={initiator_id}")
     print(f"collaborator_id={collaborator_id}")
 
@@ -180,7 +189,7 @@ def main() -> None:
 
     def collaborator_on_task_collaboration_request(payload: dict) -> None:
         print(f"[RobotDog] on_task_collaboration_request payload={payload}")
-        collaborator.accept_task_collaboration(collaborator_id, task_id)
+        collaborator.accept_task_collaboration(collaborator_id, task_id, payload["src_agent_id"])
 
     def collaborator_on_task_start_command(payload: dict) -> None:
         print(f"[RobotDog] on_task_start_command payload={payload}")
@@ -204,15 +213,17 @@ def main() -> None:
         ),
     )
 
-    initiator.register_agent_attribute(initiator_id, ["可疑人员识别", "目标跟踪"])
-    collaborator.register_agent_attribute(collaborator_id, ["声光驱离"])
+    print(initiator.register_agent_attribute(initiator_id, ["可疑人员识别", "目标跟踪"]))
+    print(collaborator.register_agent_attribute(collaborator_id, ["声光驱离"]))
 
     print(f"initiator join={initiator.join_network(initiator_id)}")
     print(f"collaborator join={collaborator.join_network(collaborator_id)}")
 
-    task_id = initiator.request_task_execution(initiator_id, "可疑人员驱离")
+    task_ok, task_id = initiator.request_task_execution(initiator_id, "可疑人员驱离")
+    if not task_ok:
+        raise RuntimeError(task_id)
     print(f"task_id={task_id}")
-    print(initiator.task_info_report(initiator_id, task_id, "Location", current_timestamp_bytes()))
+    print(initiator.task_info_report(initiator_id, task_id, "Location", current_location_bytes()))
     time.sleep(0.2)
 
     print(initiator.request_task_collaboration(initiator_id, task_id, ["声光驱离"]))

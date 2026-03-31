@@ -122,12 +122,18 @@ logs/acn_sdk.log
 
 `config/config.yaml` 当前包含两类配置：
 
-- 网端信息：`network_ip=127.0.0.1`、`acn_agent_port=9010`、`agent_gw_ws_port=9002`、`agent_gw_moq_port=9003`、`web_ui_port=9004`
+- 网端信息：`network_ip=127.0.0.1`、`acn_agent_port=9010`、`arf_port=9001`、`agent_gw_ws_port=9002`、`agent_gw_moq_port=9003`、`web_ui_port=9004`
 - `config.py` 只提供模型默认值，运行时以 `config/config.yaml` 为准
 - 修改 YAML 后，如需让已启动的 SDK 立即生效，调用 `sdk.reload_config()`
 - 如需切换到其他环境，可直接修改 `config/config.yaml`，无需改动代码
 
 ## 9. 当前功能校验
+
+接口返回约定：
+
+- `AcnSDK` 对外公共接口统一返回 `Tuple`
+- 第一个元素固定为 `bool` 型 `result`
+- 成功时后续元素为业务结果，失败时通常返回错误信息
 
 当前实现已覆盖以下行为：
 

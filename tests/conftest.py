@@ -23,7 +23,8 @@ class MockResponse:
 
 
 class MockHttpSession:
-    def __init__(self) -> None:
+    def __init__(self, name: str) -> None:
+        self.name = name
         self.requests: list[tuple[str, dict[str, Any], dict[str, str] | None]] = []
 
     def post(self, url: str, json: dict[str, Any], headers: dict[str, str] | None = None) -> MockResponse:
@@ -122,6 +123,7 @@ def sdk_environment(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> SDKConfi
             "network": {
                 "network_ip": "127.0.0.1",
                 "acn_agent_port": 9010,
+                "arf_port": 9001,
                 "agent_gw_ws_port": 9002,
                 "agent_gw_moq_port": 9003,
                 "web_ui_port": 9004,
@@ -139,16 +141,29 @@ def sdk_environment(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> SDKConfi
     config_path = tmp_path / "config.yaml"
     config.save(config_path)
     monkeypatch.setattr(sdk_module, "DEFAULT_CONFIG_PATH", config_path)
-    monkeypatch.setattr(HttpClient, "__init__", _build_http_client_init(MockHttpSession()), raising=False)
+    monkeypatch.setattr(
+        HttpClient,
+        "__init__",
+        _build_http_client_init(MockHttpSession("acn_agent"), MockHttpSession("arf")),
+        raising=False,
+    )
     return config
 
 
-def _build_http_client_init(session: MockHttpSession) -> Any:
-    def _init(self: HttpClient, base_url: str, session_override: object | None = None) -> None:
+def _build_http_client_init(acn_session: MockHttpSession, arf_session: MockHttpSession) -> Any:
+    def _init(
+        self: HttpClient,
+        base_url: str,
+        arf_base_url: str | None = None,
+        session_override: object | None = None,
+        arf_session_override: object | None = None,
+    ) -> None:
         self.base_url = base_url.rstrip("/")
+        self.arf_base_url = (arf_base_url or base_url).rstrip("/")
         import logging
 
         self._logger = logging.getLogger(self.__class__.__name__)
-        self._session = session
+        self._session = acn_session
+        self._arf_session = arf_session
 
     return _init

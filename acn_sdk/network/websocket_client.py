@@ -4,6 +4,8 @@ import json
 import logging
 from typing import Any
 
+from ..logging_utils import format_json_for_log
+
 
 class WebSocketClient:
     def __init__(self, url: str) -> None:
@@ -21,18 +23,21 @@ class WebSocketClient:
     def send_json(self, payload: dict[str, Any]) -> None:
         if self._connection is None:
             raise RuntimeError("WebSocket is not connected.")
-        self._logger.info("Sending websocket payload: %s", payload)
-        self._connection.send(json.dumps(payload, ensure_ascii=False))
+        message = json.dumps(payload, ensure_ascii=False)
+        self._logger.info("Sending websocket payload\n%s", format_json_for_log(payload))
+        self._connection.send(message)
 
     def receive(self) -> str:
         if self._connection is None:
             raise RuntimeError("WebSocket is not connected.")
         message = self._connection.recv()
-        self._logger.info("Received websocket payload: %s", message)
         return message
 
     def receive_json(self) -> dict[str, Any]:
-        return json.loads(self.receive())
+        message = self.receive()
+        payload = json.loads(message)
+        self._logger.info("Received websocket payload\n%s", format_json_for_log(payload))
+        return payload
 
     def disconnect(self) -> None:
         if self._connection is None:

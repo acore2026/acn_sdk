@@ -136,11 +136,14 @@ Windows + PyCharm：
 from acn_sdk import AcnSDK, RobotInfo
 
 sdk = AcnSDK(robot_name="AliceAgent")
+result, agent_id = sdk.register_agent_info(robot_info)
 ```
+
+`AcnSDK` 对机器人暴露的公共接口现统一返回 `Tuple`：第一个元素为 `bool` 型 `result`，后续元素为业务结果或错误信息。
 
 当前配置文件 [config.yaml](/home/acn/zxy/config/config.yaml) 已调整为：
 
-- 网端信息：`network_ip=127.0.0.1`、`acn_agent_port=9010`、`agent_gw_ws_port=9002`、`agent_gw_moq_port=9003`、`web_ui_port=9004`
+- 网端信息：`network_ip=127.0.0.1`、`acn_agent_port=9010`、`arf_port=9001`、`agent_gw_ws_port=9002`、`agent_gw_moq_port=9003`、`web_ui_port=9004`
 - `acn_sdk/config.py` 只提供配置模型和默认值，不是运行时入口
 - 运行时优先读取 `config/config.yaml`；修改后可在代码里调用 `sdk.reload_config()` 立即重载
 

@@ -121,7 +121,7 @@ async def debug_task_request_collaboration(payload: DebugTaskRequestCollaboratio
     message = _ws_message(
         "TASK_REQUEST_COLLABORATION",
         {
-            "src_agent_id": "ARF",
+            "src_agent_id": payload.initiator_agent_id,
             "dst_agent_id": payload.collaborator_agent_id,
             "task_id": payload.task_id,
             "task_description": payload.task_description,

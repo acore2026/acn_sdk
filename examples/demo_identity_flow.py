@@ -16,19 +16,27 @@ def main() -> None:
         metadata={"region": "CN", "os": "Linux", "version": "1.0.0"},
     )
 
-    agent_id = sdk.register_agent_info(robot_info)
+    result, agent_id = sdk.register_agent_info(robot_info)
+    if not result:
+        raise RuntimeError(agent_id)
     print(f"registered agent_id={agent_id}")
 
-    capability_response = sdk.register_agent_attribute(agent_id, ["可疑人员识别", "目标跟踪", "声光驱离"])
+    result, capability_response = sdk.register_agent_attribute(agent_id, ["可疑人员识别", "目标跟踪", "声光驱离"])
+    if not result:
+        raise RuntimeError(capability_response)
     print(f"first capability registration response={capability_response}")
 
-    capability_response = sdk.register_agent_attribute(agent_id, ["目标跟踪", "无人机侦测"])
+    result, capability_response = sdk.register_agent_attribute(agent_id, ["目标跟踪", "无人机侦测"])
+    if not result:
+        raise RuntimeError(capability_response)
     print(f"second capability registration response={capability_response}")
 
-    query_result = sdk.query_robot_id("AliceAgent", "13800138000")
+    result, query_result = sdk.query_robot_id("AliceAgent", "13800138000")
     print(f"query result={query_result}")
 
-    deregister_response = sdk.deregister_robot(agent_id, "retired")
+    result, deregister_response = sdk.deregister_robot(agent_id, "retired")
+    if not result:
+        raise RuntimeError(deregister_response)
     print(f"deregister response={deregister_response}")
 
 
