@@ -11,8 +11,8 @@ from acn_sdk import AcnSDK, RobotInfo
 from acn_sdk.config import SDKConfig
 
 
-def on_message(agent_name: str, message_type: str, payload: dict) -> None:
-    print(f"[{agent_name}] callback message_type={message_type} payload={payload}")
+def on_moq_message_received(agent_name: str, namespace: str, track: str, payload: bytes) -> None:
+    print(f"[{agent_name}] moq_message namespace={namespace} track={track} payload={payload!r}")
 
 
 def _post_agent_gw_debug(path: str, payload: dict) -> None:
@@ -139,12 +139,10 @@ def main() -> None:
     initiator = AcnSDK(
         robot_name="AliceAgent",
         config_path=initiator_config,
-        on_message_received=lambda msg_type, payload: on_message("AliceAgent", msg_type, payload),
     )
     collaborator = AcnSDK(
         robot_name="RobotDog",
         config_path=collaborator_config,
-        on_message_received=lambda msg_type, payload: on_message("RobotDog", msg_type, payload),
     )
 
     initiator_id = initiator.register_agent_info(
@@ -168,6 +166,44 @@ def main() -> None:
     print(f"initiator_id={initiator_id}")
     print(f"collaborator_id={collaborator_id}")
 
+    def initiator_on_discover_result_received(payload: dict) -> None:
+        print(f"[AliceAgent] on_discover_result_received payload={payload}")
+        collaborator_candidates = payload.get("discover_result", [])
+        if not collaborator_candidates:
+            raise RuntimeError("discover_result is empty")
+        initiator.start_task(
+            initiator_id,
+            collaborator_candidates[0],
+            task_id,
+            "协同声光驱离",
+        )
+
+    def collaborator_on_task_collaboration_request(payload: dict) -> None:
+        print(f"[RobotDog] on_task_collaboration_request payload={payload}")
+        collaborator.accept_task_collaboration(collaborator_id, task_id)
+
+    def collaborator_on_task_start_command(payload: dict) -> None:
+        print(f"[RobotDog] on_task_start_command payload={payload}")
+        collaborator.request_task_execution(
+            collaborator_id,
+            payload["task_description"],
+            task_id=payload["task_id"],
+        )
+
+    initiator.register_callbacks(
+        on_discover_result_received=initiator_on_discover_result_received,
+        on_moq_message_received=lambda namespace, track, payload: on_moq_message_received(
+            "AliceAgent", namespace, track, payload
+        ),
+    )
+    collaborator.register_callbacks(
+        on_task_collaboration_request=collaborator_on_task_collaboration_request,
+        on_task_start_command=collaborator_on_task_start_command,
+        on_moq_message_received=lambda namespace, track, payload: on_moq_message_received(
+            "RobotDog", namespace, track, payload
+        ),
+    )
+
     initiator.register_agent_attribute(initiator_id, ["可疑人员识别", "目标跟踪"])
     collaborator.register_agent_attribute(collaborator_id, ["声光驱离"])
 
@@ -189,12 +225,10 @@ def main() -> None:
         initiator_skills=["可疑人员识别", "目标跟踪"],
     )
     time.sleep(0.2)
-    print(collaborator.accept_task_collaboration(collaborator_id, task_id))
 
     push_discover_result(initiator_agent_id=initiator_id, collaborator_ids=[collaborator_id])
     time.sleep(0.2)
 
-    print(initiator.start_task(initiator_id, collaborator_id, task_id, "协同声光驱离"))
     push_start_task(
         collaborator_agent_id=collaborator_id,
         initiator_agent_id=initiator_id,
@@ -202,7 +236,6 @@ def main() -> None:
         task_description="协同声光驱离",
     )
     time.sleep(0.2)
-    collaborator.request_task_execution(collaborator_id, "协同声光驱离", task_id=task_id)
 
     push_subscribe_track(
         subscriber_agent_id=collaborator_id,

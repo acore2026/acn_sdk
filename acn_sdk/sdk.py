@@ -37,12 +37,20 @@ class AcnSDK:
         issuer_id: str = HUAWEI_ISSUER_DID,
         config_path: str | Path | None = None,
         on_message_received: Any | None = None,
+        on_task_collaboration_request: Any | None = None,
+        on_discover_result_received: Any | None = None,
+        on_task_start_command: Any | None = None,
+        on_moq_message_received: Any | None = None,
     ) -> None:
         self.config_path = Path(config_path).expanduser().resolve() if config_path is not None else DEFAULT_CONFIG_PATH
         self.config = SDKConfig.load(self.config_path)
         self.robot_name = robot_name
         self.issuer_id = issuer_id
         self.on_message_received = on_message_received
+        self.on_task_collaboration_request = on_task_collaboration_request
+        self.on_discover_result_received = on_discover_result_received
+        self.on_task_start_command = on_task_start_command
+        self.on_moq_message_received = on_moq_message_received
         self.credential_issuer = CredentialIssuer()
         self.http_client: HttpClient | None = None
         self.websocket_client: WebSocketClient | None = None
@@ -65,6 +73,26 @@ class AcnSDK:
             self.config.network.agent_gw_moq_port,
             self.config.network.web_ui_port,
         )
+
+    def register_callbacks(
+        self,
+        *,
+        on_message_received: Any | None = None,
+        on_task_collaboration_request: Any | None = None,
+        on_discover_result_received: Any | None = None,
+        on_task_start_command: Any | None = None,
+        on_moq_message_received: Any | None = None,
+    ) -> None:
+        if on_message_received is not None:
+            self.on_message_received = on_message_received
+        if on_task_collaboration_request is not None:
+            self.on_task_collaboration_request = on_task_collaboration_request
+        if on_discover_result_received is not None:
+            self.on_discover_result_received = on_discover_result_received
+        if on_task_start_command is not None:
+            self.on_task_start_command = on_task_start_command
+        if on_moq_message_received is not None:
+            self.on_moq_message_received = on_moq_message_received
 
     def reload_config(self) -> None:
         if any(
@@ -368,6 +396,12 @@ class AcnSDK:
             self._published_tracks.clear()
             self._subscribed_tracks.clear()
             self._task_registry.clear()
+        elif message_type == "TASK_REQUEST_COLLABORATION":
+            self._dispatch_message_callback("on_task_collaboration_request", self.on_task_collaboration_request, payload)
+        elif message_type == "DISCOVER_RESULT":
+            self._dispatch_message_callback("on_discover_result_received", self.on_discover_result_received, payload)
+        elif message_type == "START_TASK":
+            self._dispatch_message_callback("on_task_start_command", self.on_task_start_command, payload)
 
         if self.on_message_received is not None:
             self.on_message_received(message_type, payload)
@@ -441,15 +475,15 @@ class AcnSDK:
             self._subscribed_tracks.add(track_key)
 
     def _handle_moq_object_received(self, namespace: str, track: str, payload: bytes) -> None:
+        moq_message = {
+            "namespace": namespace,
+            "track": track,
+            "message_info": payload,
+        }
+        if self.on_moq_message_received is not None:
+            self.on_moq_message_received(namespace, track, payload)
         if self.on_message_received is not None:
-            self.on_message_received(
-                "MOQ_OBJECT",
-                {
-                    "namespace": namespace,
-                    "track": track,
-                    "message_info": payload,
-                },
-            )
+            self.on_message_received("MOQ_OBJECT", moq_message)
 
     def _start_network_listener(self) -> None:
         if self.websocket_client is None:
@@ -510,6 +544,15 @@ class AcnSDK:
             timestamp=self._utc_timestamp(),
             payload=payload,
         ).model_dump(mode="json")
+
+    @staticmethod
+    def _dispatch_message_callback(callback_name: str, callback: Any | None, payload: dict[str, Any]) -> None:
+        if callback is None:
+            return
+        try:
+            callback(payload)
+        except TypeError as exc:
+            raise TypeError(f"{callback_name} must accept a single payload argument.") from exc
 
     @staticmethod
     def _generate_task_id() -> str:

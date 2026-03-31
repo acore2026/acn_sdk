@@ -27,6 +27,20 @@ acn_sdk.task.task_manager.TaskManager
 - `issuer_id` 目前保留为兼容参数；能力 VC 的实际发放者已改为按能力名称自动选择
 - 可通过 `config_path` 参数指定其他 YAML 配置文件；运行中修改 YAML 后可调用 `reload_config()` 重新加载
 
+### `register_callbacks(...) -> None`
+
+注册业务侧回调。
+
+支持的回调包括：
+
+- `on_task_collaboration_request(payload)`：收到 `TASK_REQUEST_COLLABORATION` 时触发
+- `on_discover_result_received(payload)`：收到 `DISCOVER_RESULT` 时触发，通常在回调里调用 `start_task()`
+- `on_task_start_command(payload)`：收到 `START_TASK` 时触发
+- `on_moq_message_received(namespace, track, payload)`：收到 MOQ 订阅对象时触发
+- `on_message_received(message_type, payload)`：保留的通用回调，继续兼容旧用法
+
+未注册对应回调时，SDK 会跳过对应处理，仅保留通用回调行为。
+
 ### `reload_config() -> None`
 
 重新读取 `config/config.yaml`（或 `config_path` 指定的文件），并刷新以下依赖：
@@ -268,6 +282,9 @@ POST /arf/v1/agent-discoveries
 
 - `SUBSCRIBE_TRACK`：触发本地 MOQ 订阅
 - `CLEAR`：清空本地任务、发布和订阅缓存
+- `TASK_REQUEST_COLLABORATION`：触发 `on_task_collaboration_request(payload)` 回调
+- `DISCOVER_RESULT`：触发 `on_discover_result_received(payload)` 回调
+- `START_TASK`：触发 `on_task_start_command(payload)` 回调
 - 其他消息类型：透传给初始化时注册的 `on_message_received(message_type, payload)` 回调
 
 ### `connect_network() -> None`

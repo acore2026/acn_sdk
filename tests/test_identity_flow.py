@@ -390,6 +390,46 @@ def test_join_network_starts_background_listener_for_subscribe_track(sdk_environ
     sdk.logout_network(agent_id)
 
 
+def test_register_callbacks_dispatches_websocket_and_moq_messages(sdk_environment: object) -> None:
+    ws_messages: list[tuple[str, dict[str, object]]] = []
+    moq_messages: list[tuple[str, str, bytes]] = []
+    sdk = create_sdk()
+    sdk.register_callbacks(
+        on_task_collaboration_request=lambda payload: ws_messages.append(("TASK_REQUEST_COLLABORATION", payload)),
+        on_discover_result_received=lambda payload: ws_messages.append(("DISCOVER_RESULT", payload)),
+        on_task_start_command=lambda payload: ws_messages.append(("START_TASK", payload)),
+        on_moq_message_received=lambda namespace, track, payload: moq_messages.append((namespace, track, payload)),
+    )
+
+    sdk.handle_network_message(
+        {
+            "type": "TASK_REQUEST_COLLABORATION",
+            "timestamp": "2025-01-01T00:00:00Z",
+            "payload": {"task_id": "task-1", "src_agent_id": "ARF"},
+        }
+    )
+    sdk.handle_network_message(
+        {
+            "type": "DISCOVER_RESULT",
+            "timestamp": "2025-01-01T00:00:00Z",
+            "payload": {"discover_result": ["did:acn:agent:peer-1"]},
+        }
+    )
+    sdk.handle_network_message(
+        {
+            "type": "START_TASK",
+            "timestamp": "2025-01-01T00:00:00Z",
+            "payload": {"task_id": "task-1", "task_description": "demo task"},
+        }
+    )
+
+    sdk._handle_moq_object_received("/task-1/did:acn:agent:alice", "Location", b"payload")
+
+    assert [message_type for message_type, _ in ws_messages] == ["TASK_REQUEST_COLLABORATION", "DISCOVER_RESULT", "START_TASK"]
+    assert ws_messages[2][1]["task_description"] == "demo task"
+    assert moq_messages == [("/task-1/did:acn:agent:alice", "Location", b"payload")]
+
+
 def test_deregister_robot_sends_disconnection_when_online(sdk_environment: object) -> None:
     sdk = create_sdk()
     robot_info = RobotInfo(
