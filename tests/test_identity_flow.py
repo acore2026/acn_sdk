@@ -282,7 +282,12 @@ def test_join_network_and_task_flow(sdk_environment: object) -> None:
     assert websocket_client.sent_messages[-1]["type"] == "TASK_ACCEPT_COLLABORATION"
     assert websocket_client.sent_messages[-1]["payload"]["dst_agent_id"] == collaborator_agent_id
 
-    result, started_task_id, dst_agent_id = sdk.start_task(agent_id, "did:acn:agent:peer-1", task_id, "协同声光驱离")
+    result, started_task_id, dst_agent_id = sdk.start_task_collaboration(
+        agent_id,
+        "did:acn:agent:peer-1",
+        task_id,
+        "协同声光驱离",
+    )
     assert result is True
     assert started_task_id == task_id
     assert dst_agent_id == "did:acn:agent:peer-1"
@@ -304,7 +309,23 @@ def test_join_network_and_task_flow(sdk_environment: object) -> None:
         }
     )
     assert result is True
-    assert moq_clients["subscriber"].subscribed == [(f"/{task_id}/{agent_id}", "Location", agent_id)]
+    assert moq_clients["subscriber"].subscribed == []
+
+    result, _ = sdk.handle_network_message(
+        {
+            "type": "SUBSCRIBE_TRACK",
+            "timestamp": "2025-01-01T00:00:01Z",
+            "payload": {
+                "src_agent_id": "did:acn:agent:peer-1",
+                "task_id": task_id,
+                "track_list": [{"namespace": f"/{task_id}/did:acn:agent:peer-1", "track": "Location"}],
+            },
+        }
+    )
+    assert result is True
+    assert moq_clients["subscriber"].subscribed == [
+        (f"/{task_id}/did:acn:agent:peer-1", "Location", agent_id)
+    ]
 
     moq_clients["subscriber"].simulate_incoming_object(f"/{task_id}/{agent_id}", "Location", b"remote-payload")
     assert messages[-1][0] == "MOQ_OBJECT"

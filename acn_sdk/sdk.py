@@ -427,7 +427,13 @@ class AcnSDK:
             self._logger.exception("Failed to accept task collaboration for task_id=%s.", task_id)
             return (False, str(exc))
 
-    def start_task(self, agent_id: str, dst_agent_id: str, task_id: str, task_description: str) -> tuple[Any, ...]:
+    def start_task_collaboration(
+        self,
+        agent_id: str,
+        dst_agent_id: str,
+        task_id: str,
+        task_description: str,
+    ) -> tuple[Any, ...]:
         try:
             self._require_online_agent(agent_id)
             if self.websocket_client is None:
@@ -556,13 +562,14 @@ class AcnSDK:
     def _handle_subscribe_track(self, payload: dict[str, Any]) -> None:
         if self.moq_sub_client is None:
             raise RuntimeError("MoQ subscriber is not connected. Call join_network() first.")
+        local_agent_id = self.identity_manager.agent_id or self.robot_name
         for track_info in payload.get("track_list", []):
             namespace = track_info["namespace"]
             track = track_info["track"]
             track_key = self._track_key(namespace, track)
-            if track_key in self._subscribed_tracks:
+            if track_key in self._subscribed_tracks or track_key in self._published_tracks:
                 continue
-            self.moq_sub_client.subscribe(namespace, track, self.identity_manager.agent_id or self.robot_name)
+            self.moq_sub_client.subscribe(namespace, track, local_agent_id)
             self._subscribed_tracks.add(track_key)
 
     def _handle_moq_object_received(self, namespace: str, track: str, payload: bytes) -> None:

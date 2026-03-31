@@ -41,7 +41,7 @@ acn_sdk.task.task_manager.TaskManager
 支持的回调包括：
 
 - `on_task_collaboration_request(payload)`：收到 `TASK_REQUEST_COLLABORATION` 时触发
-- `on_discover_result_received(payload)`：收到 `DISCOVER_RESULT` 时触发，通常在回调里调用 `start_task()`
+- `on_discover_result_received(payload)`：收到 `DISCOVER_RESULT` 时触发，通常在回调里调用 `start_task_collaboration()`
 - `on_task_start_command(payload)`：收到 `START_TASK` 时触发
 - `on_moq_message_received(namespace, track, payload)`：收到 MOQ 订阅对象时触发
 - `on_message_received(message_type, payload)`：保留的通用回调，继续兼容旧用法
@@ -278,7 +278,7 @@ POST /arf/v1/agent-discoveries
 
 - `dst_agent_id` 为空时，SDK 会优先使用最近一次 `TASK_REQUEST_COLLABORATION` 中的 `src_agent_id`。
 
-### `start_task(agent_id: str, dst_agent_id: str, task_id: str, task_description: str) -> tuple[bool, str, str] | tuple[bool, str]`
+### `start_task_collaboration(agent_id: str, dst_agent_id: str, task_id: str, task_description: str) -> tuple[bool, str, str] | tuple[bool, str]`
 
 发送 WebSocket `START_TASK`，用于通知协作方开始执行任务。
 

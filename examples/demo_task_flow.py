@@ -180,7 +180,7 @@ def main() -> None:
         collaborator_candidates = payload.get("discover_result", [])
         if not collaborator_candidates:
             raise RuntimeError("discover_result is empty")
-        initiator.start_task(
+        initiator.start_task_collaboration(
             initiator_id,
             collaborator_candidates[0],
             task_id,
