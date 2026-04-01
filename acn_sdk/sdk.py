@@ -30,6 +30,10 @@ from .network.websocket_client import WebSocketClient
 from .task.task_manager import TaskManager
 
 DEFAULT_CONFIG_PATH = Path(__file__).resolve().parent.parent / "config" / "config.yaml"
+NETWORK_ONLINE = "Online"
+NETWORK_OFFLINE = "Offline"
+TASK_PROCESSING = "Processing"
+TASK_TERMINATED = "Terminated"
 
 
 class AcnSDK:
@@ -60,7 +64,7 @@ class AcnSDK:
         self.moq_sub_client: MoQClient | None = None
         self.pipeline_log_reporter: PipelineLogReporter | None = None
         self.task_manager: TaskManager | None = None
-        self.network_status = "OFFLINE"
+        self.network_status = NETWORK_OFFLINE
         self._published_tracks: set[str] = set()
         self._subscribed_tracks: set[str] = set()
         self._task_registry: dict[str, dict[str, Any]] = {}
@@ -228,6 +232,8 @@ class AcnSDK:
         try:
             if self.identity_manager.agent_id != agent_id:
                 raise ValueError("The supplied agent_id does not match this device.")
+            if self._has_processing_tasks():
+                raise RuntimeError("Cannot deregister while tasks are still processing.")
 
             timestamp = self._utc_timestamp()
             request = DeregisterRequest(
@@ -247,7 +253,7 @@ class AcnSDK:
             )
             response = self.http_client.deregister_robot(request)
 
-            if self.network_status == "ONLINE" and self.websocket_client is not None:
+            if self.network_status == NETWORK_ONLINE and self.websocket_client is not None:
                 disconnection_message = self._build_ws_message(
                     "DISCONNECTION",
                     {"src_agent_id": agent_id},
@@ -265,8 +271,7 @@ class AcnSDK:
                 self.websocket_client.send_json(
                     disconnection_message
                 )
-            self.identity_manager.clear()
-            self.disconnect_all()
+            self._clear_identity_and_network_state(clear_task_registry=True)
             self._logger.info("Robot deregistered. response=\n%s", format_json_for_log(response))
             return (True, self._stringify_result(response))
         except Exception as exc:
@@ -276,7 +281,7 @@ class AcnSDK:
     def join_network(self, agent_id: str) -> tuple[bool, str]:
         try:
             self._require_local_agent(agent_id)
-            if self.network_status == "ONLINE":
+            if self.network_status == NETWORK_ONLINE:
                 raise RuntimeError("Robot is already online.")
 
             self.websocket_client = self._create_websocket_client()
@@ -311,7 +316,7 @@ class AcnSDK:
                 self.disconnect_all(close_http=False)
                 raise
 
-            self.network_status = "ONLINE"
+            self.network_status = NETWORK_ONLINE
             self._start_network_listener()
             self._logger.info("Network join successful for agent_id=%s", agent_id)
             return (True, agent_id)
@@ -322,8 +327,10 @@ class AcnSDK:
     def logout_network(self, agent_id: str) -> tuple[bool, str]:
         try:
             self._require_local_agent(agent_id)
-            if self.network_status != "ONLINE":
+            if self.network_status != NETWORK_ONLINE:
                 raise RuntimeError("Robot is not online.")
+            if self._has_processing_tasks():
+                raise RuntimeError("Cannot logout while tasks are still processing.")
             if self.websocket_client is not None:
                 disconnection_message = self._build_ws_message(
                     "DISCONNECTION",
@@ -341,7 +348,7 @@ class AcnSDK:
                 self.websocket_client.send_json(
                     disconnection_message
                 )
-            self.disconnect_all(close_http=False)
+            self.disconnect_all(close_http=False, clear_task_registry=False)
             return (True, agent_id)
         except Exception as exc:
             self._logger.exception("Failed to logout network for agent_id=%s.", agent_id)
@@ -371,7 +378,9 @@ class AcnSDK:
             task_id = response.get("task_id", task_id)
             self._task_registry[task_id] = {
                 "description": task_info,
-                "status": "requested",
+                "status": TASK_PROCESSING,
+                "published_tracks": set(),
+                "subscribed_tracks": set(),
             }
             self._logger.info("Task execution requested. task_id=%s response=\n%s", task_id, format_json_for_log(response))
             return (True, task_id)
@@ -388,6 +397,9 @@ class AcnSDK:
     ) -> tuple[bool, str]:
         try:
             self._require_online_agent(agent_id)
+            task_context = self._task_registry.get(task_id)
+            if task_context is None or task_context.get("status") != TASK_PROCESSING:
+                raise RuntimeError("Task is not processing.")
             request = TaskTerminationRequest(
                 agent_id=agent_id,
                 task_id=task_id,
@@ -406,8 +418,9 @@ class AcnSDK:
                 task_id=task_id,
             )
             response = self.http_client.request_terminate_task(request)
+            self._stop_task_tracks(task_id)
             if task_id in self._task_registry:
-                self._task_registry[task_id]["status"] = "terminated"
+                self._task_registry[task_id]["status"] = TASK_TERMINATED
             self._logger.info("Task termination requested. task_id=%s response=\n%s", task_id, format_json_for_log(response))
             return (True, self._stringify_result(response))
         except Exception as exc:
@@ -460,6 +473,7 @@ class AcnSDK:
                     publish_track_message
                 )
                 self._published_tracks.add(track_key)
+                self._track_task_published(task_id, track_key)
 
             self._report_pipeline_log(
                 protocol="MoQ",
@@ -612,9 +626,7 @@ class AcnSDK:
             if message_type == "SUBSCRIBE_TRACK":
                 self._handle_subscribe_track(payload)
             elif message_type == "CLEAR":
-                self._published_tracks.clear()
-                self._subscribed_tracks.clear()
-                self._task_registry.clear()
+                self._clear_identity_and_network_state(clear_task_registry=True, force_stop_processing_tasks=True)
             elif message_type == "TASK_REQUEST_COLLABORATION":
                 task_id = payload.get("task_id")
                 if task_id:
@@ -642,14 +654,14 @@ class AcnSDK:
             self.moq_pub_client = self._create_moq_client("publisher")
             self.moq_sub_client = self._create_moq_client("subscriber")
             self.task_manager = TaskManager()
-            self.network_status = "ONLINE"
+            self.network_status = NETWORK_ONLINE
             self._logger.info("Network components initialized without handshake. network_status=%s", self.network_status)
-            return (True, "ONLINE")
+            return (True, NETWORK_ONLINE)
         except Exception as exc:
             self._logger.exception("Failed to initialize network components.")
             return (False, str(exc))
 
-    def disconnect_all(self, close_http: bool = True) -> tuple[bool, str]:
+    def disconnect_all(self, close_http: bool = True, clear_task_registry: bool = False) -> tuple[bool, str]:
         try:
             self._stop_network_listener()
             if close_http:
@@ -669,11 +681,10 @@ class AcnSDK:
             if self.task_manager is not None:
                 self.task_manager.stop_all()
                 self.task_manager = None
-            self._published_tracks.clear()
-            self._subscribed_tracks.clear()
-            self.network_status = "OFFLINE"
+            self._clear_track_state(clear_task_registry=clear_task_registry)
+            self.network_status = NETWORK_OFFLINE
             self._logger.info("Network state changed to %s", self.network_status)
-            return (True, "OFFLINE")
+            return (True, NETWORK_OFFLINE)
         except Exception as exc:
             self._logger.exception("Failed to disconnect network components.")
             return (False, str(exc))
@@ -708,6 +719,7 @@ class AcnSDK:
         if self.moq_sub_client is None:
             raise RuntimeError("MoQ subscriber is not connected. Call join_network() first.")
         local_agent_id = self.identity_manager.agent_id or self.robot_name
+        task_id = payload.get("task_id")
         for track_info in payload.get("track_list", []):
             namespace = track_info["namespace"]
             track = track_info["track"]
@@ -726,6 +738,8 @@ class AcnSDK:
             )
             self.moq_sub_client.subscribe(namespace, track, local_agent_id)
             self._subscribed_tracks.add(track_key)
+            if isinstance(task_id, str) and task_id:
+                self._track_task_subscribed(task_id, track_key)
 
     def _handle_moq_object_received(self, namespace: str, track: str, payload: bytes) -> None:
         moq_message = {
@@ -788,8 +802,93 @@ class AcnSDK:
 
     def _require_online_agent(self, agent_id: str) -> None:
         self._require_local_agent(agent_id)
-        if self.network_status != "ONLINE":
+        if self.network_status != NETWORK_ONLINE:
             raise RuntimeError("Robot must be online before performing task operations.")
+
+    def _clear_track_state(self, *, clear_task_registry: bool = False) -> None:
+        self._published_tracks.clear()
+        self._subscribed_tracks.clear()
+        if clear_task_registry:
+            self._task_registry.clear()
+            return
+        for task_entry in self._task_registry.values():
+            if isinstance(task_entry, dict):
+                task_entry["published_tracks"] = set()
+                task_entry["subscribed_tracks"] = set()
+
+    def _clear_identity_and_network_state(
+        self,
+        *,
+        clear_task_registry: bool = False,
+        force_stop_processing_tasks: bool = False,
+    ) -> None:
+        if force_stop_processing_tasks:
+            for task_id in self._get_processing_task_ids():
+                self._stop_task_tracks(task_id)
+                if task_id in self._task_registry:
+                    self._task_registry[task_id]["status"] = TASK_TERMINATED
+        self.identity_manager.clear()
+        self.disconnect_all(close_http=False, clear_task_registry=clear_task_registry)
+
+    def _get_processing_task_ids(self) -> list[str]:
+        return [
+            task_id
+            for task_id, task_entry in self._task_registry.items()
+            if isinstance(task_entry, dict) and task_entry.get("status") == TASK_PROCESSING
+        ]
+
+    def _has_processing_tasks(self) -> bool:
+        return bool(self._get_processing_task_ids())
+
+    def _stop_task_tracks(self, task_id: str) -> None:
+        task_entry = self._task_registry.get(task_id)
+        if not isinstance(task_entry, dict):
+            return
+        published_tracks = task_entry.get("published_tracks")
+        if isinstance(published_tracks, set):
+            for track_key in list(published_tracks):
+                namespace, track = self._split_track_key(track_key)
+                if self.moq_pub_client is not None:
+                    try:
+                        self.moq_pub_client.unpublish(namespace, track)
+                    except Exception:
+                        self._logger.exception("Failed to unpublish task_id=%s track=%s", task_id, track_key)
+                self._published_tracks.discard(track_key)
+                published_tracks.discard(track_key)
+        subscribed_tracks = task_entry.get("subscribed_tracks")
+        if isinstance(subscribed_tracks, set):
+            for track_key in list(subscribed_tracks):
+                namespace, track = self._split_track_key(track_key)
+                if self.moq_sub_client is not None:
+                    try:
+                        self.moq_sub_client.unsubscribe(namespace, track, self.identity_manager.agent_id or self.robot_name)
+                    except Exception:
+                        self._logger.exception("Failed to unsubscribe task_id=%s track=%s", task_id, track_key)
+                self._subscribed_tracks.discard(track_key)
+                subscribed_tracks.discard(track_key)
+
+    def _track_task_published(self, task_id: str, track_key: str) -> None:
+        task_entry = self._task_registry.get(task_id)
+        if not isinstance(task_entry, dict):
+            return
+        task_entry.setdefault("published_tracks", set())
+        published_tracks = task_entry.setdefault("published_tracks", set())
+        if isinstance(published_tracks, set):
+            published_tracks.add(track_key)
+
+    def _track_task_subscribed(self, task_id: str, track_key: str) -> None:
+        task_entry = self._task_registry.get(task_id)
+        if not isinstance(task_entry, dict):
+            return
+        task_entry.setdefault("subscribed_tracks", set())
+        subscribed_tracks = task_entry.setdefault("subscribed_tracks", set())
+        if isinstance(subscribed_tracks, set):
+            subscribed_tracks.add(track_key)
+
+    @staticmethod
+    def _split_track_key(track_key: str) -> tuple[str, str]:
+        namespace, track = track_key.split("::", 1)
+        return namespace, track
 
     def _build_ws_message(self, message_type: str, payload: dict[str, Any]) -> dict[str, Any]:
         return WebSocketMessage(

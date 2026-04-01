@@ -93,6 +93,19 @@ class MoQClient:
         self._publication_tracks[track_key] = full_track_name
         self._logger.info("MoQ publish namespace=%s track=%s", namespace, track)
 
+    def unpublish(self, namespace: str, track: str) -> None:
+        if self._publisher is None:
+            raise RuntimeError("MoQ publisher is not connected.")
+        track_key = self._track_key(namespace, track)
+        full_track_name = self._publication_tracks.get(track_key)
+        if full_track_name is None:
+            return
+        self._run_async(self._publisher.unpublish(full_track_name))
+        self._published_tracks.discard(track_key)
+        self._publication_tracks.pop(track_key, None)
+        self._object_counters.pop(track_key, None)
+        self._logger.info("MoQ unpublish namespace=%s track=%s", namespace, track)
+
     def send_object(self, namespace: str, track: str, payload: bytes) -> None:
         if self._publisher is None:
             raise RuntimeError("MoQ publisher is not connected.")
@@ -132,6 +145,25 @@ class MoQClient:
             track,
             subscriber_id,
         )
+
+    def unsubscribe(self, namespace: str, track: str, subscriber_id: str | None = None) -> None:
+        if self._subscriber is None:
+            raise RuntimeError("MoQ subscriber is not connected.")
+        track_key = self._track_key(namespace, track)
+        full_track_name = self._subscription_tracks.get(track_key)
+        if full_track_name is None:
+            return
+        self._run_async(self._subscriber.unsubscribe(full_track_name))
+        if subscriber_id is None:
+            self._subscriptions.pop(track_key, None)
+        else:
+            subscribers = self._subscriptions.get(track_key, [])
+            if subscriber_id in subscribers:
+                subscribers.remove(subscriber_id)
+            if not subscribers:
+                self._subscriptions.pop(track_key, None)
+        self._subscription_tracks.pop(track_key, None)
+        self._logger.info("MoQ unsubscribe namespace=%s track=%s subscriber=%s", namespace, track, subscriber_id)
 
     def simulate_incoming_object(self, namespace: str, track: str, payload: bytes) -> None:
         self._logger.info(

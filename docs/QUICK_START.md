@@ -40,6 +40,11 @@ python3 mock/mock_moq_relay.py --host 127.0.0.1 --port 9003 --cache-dir data/moq
 ```bash
 python3 examples/demo_identity_flow.py
 python3 examples/demo_task_flow.py
+python3 examples/demo_task_flow_realtime.py
+python3 examples/demo_task_collaborator.py
+python3 examples/demo_task_initiator.py
+python3 examples/demo_task_initiator_realtime.py
+python3 examples/demo_task_collaborator_realtime.py
 ```
 
 其中 `demo_task_flow.py` 会创建两个独立 SDK 实例，演示：
@@ -48,6 +53,12 @@ python3 examples/demo_task_flow.py
 - 协作方通过 WebSocket 接收 `TASK_REQUEST_COLLABORATION`
 - 发起方发布 `Location` track
 - 协作方通过真实 MOQ relay 收到 `MOQ_OBJECT`
+
+`demo_task_flow_realtime.py` 不会再用 `/debug/*` 接口注入中间消息，而是等待真实核心网消息流入，适合联调外部 AgentGW / ARF / MOQ 组件。
+
+`demo_task_initiator_realtime.py` 和 `demo_task_collaborator_realtime.py` 则把原来的双机器人拆成两个独立终端入口，且同样不使用 `/debug/*` 注入。
+
+如果要在两个终端分别运行两个机器人，先启动 `demo_task_collaborator.py`，再启动 `demo_task_initiator.py`。两个脚本默认共享 `/tmp/acn-sdk-task-demo/demo-task-flow`，也可以通过 `--runtime-root` 和 `--session-name` 指定自己的会话目录。
 
 示例中的 SDK 导入路径已经切换为：
 
@@ -104,6 +115,31 @@ Working directory: 项目根目录
 
 ```text
 Script path: examples/demo_task_flow.py
+Working directory: 项目根目录
+```
+
+```text
+Script path: examples/demo_task_flow_realtime.py
+Working directory: 项目根目录
+```
+
+```text
+Script path: examples/demo_task_collaborator.py
+Working directory: 项目根目录
+```
+
+```text
+Script path: examples/demo_task_initiator.py
+Working directory: 项目根目录
+```
+
+```text
+Script path: examples/demo_task_initiator_realtime.py
+Working directory: 项目根目录
+```
+
+```text
+Script path: examples/demo_task_collaborator_realtime.py
 Working directory: 项目根目录
 ```
 

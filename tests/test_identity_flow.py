@@ -62,8 +62,10 @@ class RecordingMoQClient(MoQClient):
         self.on_object_received = on_object_received
         self.connected = False
         self.published: list[tuple[str, str]] = []
+        self.unpublished: list[tuple[str, str]] = []
         self.sent_objects: list[tuple[str, str, bytes]] = []
         self.subscribed: list[tuple[str, str, str]] = []
+        self.unsubscribed: list[tuple[str, str, str | None]] = []
         self._published_tracks: set[str] = set()
         self._subscriptions: dict[str, list[str]] = {}
 
@@ -77,9 +79,17 @@ class RecordingMoQClient(MoQClient):
     def send_object(self, namespace: str, track: str, payload: bytes) -> None:
         self.sent_objects.append((namespace, track, payload))
 
+    def unpublish(self, namespace: str, track: str) -> None:
+        self.unpublished.append((namespace, track))
+        self._published_tracks.discard(f"{namespace}::{track}")
+
     def subscribe(self, namespace: str, track: str, subscriber_id: str) -> None:
         self.subscribed.append((namespace, track, subscriber_id))
         self._subscriptions.setdefault(f"{namespace}::{track}", []).append(subscriber_id)
+
+    def unsubscribe(self, namespace: str, track: str, subscriber_id: str | None = None) -> None:
+        self.unsubscribed.append((namespace, track, subscriber_id))
+        self._subscriptions.pop(f"{namespace}::{track}", None)
 
     def disconnect(self) -> None:
         self.connected = False
@@ -137,7 +147,7 @@ def test_register_query_and_deregister_flow(sdk_environment: object) -> None:
     deregister_response = _decode_json_result(deregister_response)
     assert deregister_response["result"] == "success"
     assert sdk.identity_manager.agent_id is None
-    assert sdk.network_status == "OFFLINE"
+    assert sdk.network_status == "Offline"
 
 
 def test_request_signatures_use_timestamp_only_and_agent_card_encoding_order(sdk_environment: object) -> None:
@@ -212,15 +222,75 @@ def test_deregister_with_mismatched_agent_id_raises(sdk_environment: object) -> 
     assert "does not match this device" in message
 
 
+def test_logout_rejects_processing_tasks(sdk_environment: object) -> None:
+    sdk = create_sdk()
+    robot_info = RobotInfo(
+        name="AliceAgent",
+        owner="+8613800138000",
+        description="AgentModel-X, SN123456",
+        priority=5,
+        metadata={},
+    )
+    result, agent_id = sdk.register_agent_info(robot_info)
+    assert result is True
+    websocket_client = MockWebSocketClient(
+        [{"type": "SETUP", "timestamp": "2025-01-01T00:00:00Z", "payload": {"status": "OK"}}]
+    )
+    sdk._create_websocket_client = lambda: websocket_client
+    sdk._create_moq_client = lambda role: RecordingMoQClient("127.0.0.1", 9003, role)
+
+    result, joined_agent_id = sdk.join_network(agent_id)
+    assert result is True
+    assert joined_agent_id == agent_id
+
+    result, task_id = sdk.request_task_execution(agent_id, "busy task")
+    assert result is True
+    assert sdk._task_registry[task_id]["status"] == "Processing"
+
+    result, message = sdk.logout_network(agent_id)
+    assert result is False
+    assert "processing" in message.lower()
+
+
+def test_deregister_rejects_processing_tasks(sdk_environment: object) -> None:
+    sdk = create_sdk()
+    robot_info = RobotInfo(
+        name="AliceAgent",
+        owner="+8613800138000",
+        description="AgentModel-X, SN123456",
+        priority=5,
+        metadata={},
+    )
+    result, agent_id = sdk.register_agent_info(robot_info)
+    assert result is True
+    websocket_client = MockWebSocketClient(
+        [{"type": "SETUP", "timestamp": "2025-01-01T00:00:00Z", "payload": {"status": "OK"}}]
+    )
+    sdk._create_websocket_client = lambda: websocket_client
+    sdk._create_moq_client = lambda role: RecordingMoQClient("127.0.0.1", 9003, role)
+
+    result, joined_agent_id = sdk.join_network(agent_id)
+    assert result is True
+    assert joined_agent_id == agent_id
+
+    result, task_id = sdk.request_task_execution(agent_id, "busy task")
+    assert result is True
+    assert sdk._task_registry[task_id]["status"] == "Processing"
+
+    result, message = sdk.deregister_robot(agent_id, "retired")
+    assert result is False
+    assert "processing" in message.lower()
+
+
 def test_connect_network_uses_new_config_ports(sdk_environment: object) -> None:
     sdk = create_sdk()
 
     assert sdk.config.network.acn_agent_url == "http://127.0.0.1:9010"
 
     result = sdk.connect_network()
-    assert result == (True, "ONLINE")
+    assert result == (True, "Online")
 
-    assert sdk.network_status == "ONLINE"
+    assert sdk.network_status == "Online"
     assert sdk.websocket_client is not None
     assert sdk.websocket_client.url == "ws://127.0.0.1:9002/ws"
     assert sdk.moq_pub_client is not None
@@ -232,8 +302,8 @@ def test_connect_network_uses_new_config_ports(sdk_environment: object) -> None:
     assert sdk.moq_sub_client.remote_port == 9003
     assert sdk.moq_sub_client.role == "subscriber"
 
-    assert sdk.disconnect_all() == (True, "OFFLINE")
-    assert sdk.network_status == "OFFLINE"
+    assert sdk.disconnect_all() == (True, "Offline")
+    assert sdk.network_status == "Offline"
 
 
 def test_join_network_and_task_flow(sdk_environment: object) -> None:
@@ -265,7 +335,7 @@ def test_join_network_and_task_flow(sdk_environment: object) -> None:
     result, joined_agent_id = sdk.join_network(agent_id)
     assert result is True
     assert joined_agent_id == agent_id
-    assert sdk.network_status == "ONLINE"
+    assert sdk.network_status == "Online"
     assert websocket_client.sent_messages[0]["type"] == "SETUP"
     assert sdk.pipeline_log_reporter is not None
     assert any(
@@ -276,6 +346,7 @@ def test_join_network_and_task_flow(sdk_environment: object) -> None:
     result, task_id = sdk.request_task_execution(agent_id, "可疑人员驱离")
     assert result is True
     assert task_id.startswith("task-")
+    assert sdk._task_registry[task_id]["status"] == "Processing"
 
     result, report_payload = sdk.task_info_report(agent_id, task_id, "Location", b"payload")
     assert result is True
@@ -312,11 +383,6 @@ def test_join_network_and_task_flow(sdk_environment: object) -> None:
     assert started_task_response == {"task_id": task_id, "dst_agent_id": "did:acn:agent:peer-1"}
     assert websocket_client.sent_messages[-1]["type"] == "START_TASK"
 
-    result, termination_response = sdk.request_terminate_task(agent_id, task_id, "completed", force=False)
-    assert result is True
-    termination_response = _decode_json_result(termination_response)
-    assert termination_response["result"] == "success"
-
     result, _ = sdk.handle_network_message(
         {
             "type": "SUBSCRIBE_TRACK",
@@ -351,11 +417,20 @@ def test_join_network_and_task_flow(sdk_environment: object) -> None:
     assert messages[-1][0] == "MOQ_OBJECT"
     assert messages[-1][1]["track"] == "Location"
 
+    result, termination_response = sdk.request_terminate_task(agent_id, task_id, "completed", force=False)
+    assert result is True
+    termination_response = _decode_json_result(termination_response)
+    assert termination_response["result"] == "success"
+    assert sdk._task_registry[task_id]["status"] == "Terminated"
+    assert moq_clients["publisher"].unpublished == [(f"/{task_id}/{agent_id}", "Location")]
+    assert moq_clients["subscriber"].unsubscribed == [(f"/{task_id}/did:acn:agent:peer-1", "Location", agent_id)]
+
     result, logged_out_agent_id = sdk.logout_network(agent_id)
     assert result is True
     assert logged_out_agent_id == agent_id
-    assert sdk.network_status == "OFFLINE"
+    assert sdk.network_status == "Offline"
     assert websocket_client.sent_messages[-1]["type"] == "DISCONNECTION"
+    assert sdk.task_manager is None
 
 
 def test_request_task_execution_requires_online_state(sdk_environment: object) -> None:
@@ -386,12 +461,12 @@ def test_task_info_report_requires_join_network_for_moq_connections(sdk_environm
     )
     result, agent_id = sdk.register_agent_info(robot_info)
     assert result is True
-    assert sdk.connect_network() == (True, "ONLINE")
+    assert sdk.connect_network() == (True, "Online")
 
     result, message = sdk.task_info_report(agent_id, "task-12345", "Location", b"payload")
     assert result is False
     assert "not connected" in message
-    assert sdk.disconnect_all() == (True, "OFFLINE")
+    assert sdk.disconnect_all() == (True, "Offline")
 
 
 def test_join_network_starts_background_listener_for_subscribe_track(sdk_environment: object) -> None:
@@ -516,7 +591,66 @@ def test_deregister_robot_sends_disconnection_when_online(sdk_environment: objec
     response = _decode_json_result(response)
     assert response["result"] == "success"
     assert websocket_client.sent_messages[-1]["type"] == "DISCONNECTION"
-    assert sdk.network_status == "OFFLINE"
+    assert sdk.network_status == "Offline"
+
+
+def test_clear_forces_processing_task_cleanup(sdk_environment: object) -> None:
+    sdk = create_sdk()
+    robot_info = RobotInfo(
+        name="AliceAgent",
+        owner="+8613800138000",
+        description="AgentModel-X, SN123456",
+        priority=5,
+        metadata={},
+    )
+    result, agent_id = sdk.register_agent_info(robot_info)
+    assert result is True
+    websocket_client = MockWebSocketClient(
+        [{"type": "SETUP", "timestamp": "2025-01-01T00:00:00Z", "payload": {"status": "OK"}}]
+    )
+    moq_clients: dict[str, RecordingMoQClient] = {}
+    sdk._create_websocket_client = lambda: websocket_client
+
+    def create_moq_client(role: str) -> RecordingMoQClient:
+        client = RecordingMoQClient("127.0.0.1", 9003, role, on_object_received=sdk._handle_moq_object_received if role == "subscriber" else None)
+        moq_clients[role] = client
+        return client
+
+    sdk._create_moq_client = create_moq_client
+
+    result, joined_agent_id = sdk.join_network(agent_id)
+    assert result is True
+    assert joined_agent_id == agent_id
+    result, task_id = sdk.request_task_execution(agent_id, "busy task")
+    assert result is True
+    result, _ = sdk.task_info_report(agent_id, task_id, "Location", b"payload")
+    assert result is True
+    result, _ = sdk.handle_network_message(
+        {
+            "type": "SUBSCRIBE_TRACK",
+            "timestamp": "2025-01-01T00:00:00Z",
+            "payload": {
+                "src_agent_id": "did:acn:agent:peer-1",
+                "task_id": task_id,
+                "track_list": [{"namespace": f"/{task_id}/did:acn:agent:peer-1", "track": "Location"}],
+            },
+        }
+    )
+    assert result is True
+
+    result, payload = sdk.handle_network_message(
+        {
+            "type": "CLEAR",
+            "timestamp": "2025-01-01T00:00:00Z",
+            "payload": {},
+        }
+    )
+    assert result is True
+    assert sdk.identity_manager.agent_id is None
+    assert sdk.network_status == "Offline"
+    assert sdk._task_registry == {}
+    assert moq_clients["publisher"].unpublished == [(f"/{task_id}/{agent_id}", "Location")]
+    assert moq_clients["subscriber"].unsubscribed == [(f"/{task_id}/did:acn:agent:peer-1", "Location", agent_id)]
 
 
 def test_reload_config_reflects_yaml_changes(sdk_environment: object) -> None:

@@ -49,7 +49,12 @@ acn-sdk/
 │   └── QUICK_START.md
 ├── examples/
 │   ├── demo_identity_flow.py
-│   └── demo_task_flow.py
+│   ├── demo_task_flow.py
+│   ├── demo_task_flow_realtime.py
+│   ├── demo_task_initiator.py
+│   ├── demo_task_collaborator.py
+│   ├── demo_task_initiator_realtime.py
+│   └── demo_task_collaborator_realtime.py
 ├── scripts/
 │   ├── start_mock_moq_relay.sh
 │   └── start_sdk_demo.sh
@@ -94,6 +99,11 @@ python3 mock/mock_agent_gw.py --host 127.0.0.1 --port 9002
 python3 mock/mock_moq_relay.py --host 127.0.0.1 --port 9003 --cache-dir data/moq-relay-cache
 python3 examples/demo_identity_flow.py
 python3 examples/demo_task_flow.py
+python3 examples/demo_task_flow_realtime.py
+python3 examples/demo_task_collaborator.py
+python3 examples/demo_task_initiator.py
+python3 examples/demo_task_initiator_realtime.py
+python3 examples/demo_task_collaborator_realtime.py
 ```
 
 推荐启动顺序：
@@ -103,7 +113,7 @@ python3 examples/demo_task_flow.py
 3. 启动 `python3 mock/mock_acn_agent.py --host 127.0.0.1 --port 9010 --arf-host 127.0.0.1 --arf-port 9001`
 4. 启动 `python3 mock/mock_agent_gw.py --host 127.0.0.1 --port 9002`
 5. 启动 `python3 mock/mock_moq_relay.py --host 127.0.0.1 --port 9003 --cache-dir data/moq-relay-cache`
-6. 运行 `python3 examples/demo_identity_flow.py`、`python3 examples/demo_task_flow.py` 或 `pytest`
+6. 运行 `python3 examples/demo_identity_flow.py`、`python3 examples/demo_task_flow.py`、`python3 examples/demo_task_flow_realtime.py`、`python3 examples/demo_task_collaborator.py`、`python3 examples/demo_task_initiator.py`、`python3 examples/demo_task_initiator_realtime.py`、`python3 examples/demo_task_collaborator_realtime.py` 或 `pytest`
 
 Windows + PyCharm：
 
@@ -114,13 +124,33 @@ Windows + PyCharm：
 5. 新建 `python mock/mock_acn_agent.py --host 127.0.0.1 --port 9010 --arf-host 127.0.0.1 --arf-port 9001` 运行配置。
 6. 新建 `python mock/mock_agent_gw.py --host 127.0.0.1 --port 9002` 运行配置。
 7. 新建 `python mock/mock_moq_relay.py --host 127.0.0.1 --port 9003 --cache-dir data/moq-relay-cache` 运行配置。
-8. 新建 `examples/demo_identity_flow.py` 和 `examples/demo_task_flow.py` 运行配置。
+8. 新建 `examples/demo_identity_flow.py`、`examples/demo_task_flow.py`、`examples/demo_task_flow_realtime.py`、`examples/demo_task_collaborator.py`、`examples/demo_task_initiator.py`、`examples/demo_task_initiator_realtime.py` 和 `examples/demo_task_collaborator_realtime.py` 运行配置。
 9. 先启动四个 mock 服务，再运行示例或测试。
 
 `examples/demo_task_flow.py` 当前会启动两个 SDK 实例：
 
 - `AliceAgent`：发起任务、请求协同、发布 `Location` track
 - `RobotDog`：接受协同、订阅 `Location` track、接收真实 MOQ relay 转发的对象
+
+`examples/demo_task_flow_realtime.py` 是不打桩中间消息的联调版，会等待真实 `TASK_REQUEST_COLLABORATION`、`DISCOVER_RESULT`、`START_TASK` 和 `SUBSCRIBE_TRACK` 消息流入，适合接外部核心网组件。
+
+如果想在两个终端分别运行两个机器人，使用：
+
+```bash
+python3 examples/demo_task_collaborator.py
+python3 examples/demo_task_initiator.py
+```
+
+建议先启动 collaborator，再启动 initiator。两个脚本默认共享 `/tmp/acn-sdk-task-demo/demo-task-flow` 作为运行目录，也支持通过 `--runtime-root` 和 `--session-name` 覆盖。
+
+如果要接真实核心网联调，使用：
+
+```bash
+python3 examples/demo_task_collaborator_realtime.py
+python3 examples/demo_task_initiator_realtime.py
+```
+
+这两个脚本不会通过 `/debug/*` 注入中间消息，只依赖真实 AgentGW / ARF / MOQ 组件下发的消息流。
 
 真实联调成功时，终端会出现类似输出：
 
