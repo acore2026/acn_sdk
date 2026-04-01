@@ -93,6 +93,10 @@ def create_sdk() -> AcnSDK:
     return AcnSDK(robot_name="AliceAgent")
 
 
+def _decode_json_result(value: str) -> dict[str, object]:
+    return json.loads(value)
+
+
 def test_register_query_and_deregister_flow(sdk_environment: object) -> None:
     sdk = create_sdk()
     robot_info = RobotInfo(
@@ -110,6 +114,7 @@ def test_register_query_and_deregister_flow(sdk_environment: object) -> None:
 
     result, capability_response = sdk.register_agent_attribute(agent_id, ["pick", "place"])
     assert result is True
+    capability_response = _decode_json_result(capability_response)
     assert capability_response["result"] == "success"
     assert len(sdk.identity_manager.capability_vcs) == 2
     assert sdk.identity_manager.capability_names == ["pick", "place"]
@@ -117,6 +122,7 @@ def test_register_query_and_deregister_flow(sdk_environment: object) -> None:
 
     result, capability_response = sdk.register_agent_attribute(agent_id, ["place", "move"])
     assert result is True
+    capability_response = _decode_json_result(capability_response)
     assert capability_response["result"] == "success"
     assert len(sdk.identity_manager.capability_vcs) == 3
     assert sdk.identity_manager.capability_names == ["pick", "place", "move"]
@@ -128,6 +134,7 @@ def test_register_query_and_deregister_flow(sdk_environment: object) -> None:
 
     result, deregister_response = sdk.deregister_robot(agent_id, "retired")
     assert result is True
+    deregister_response = _decode_json_result(deregister_response)
     assert deregister_response["result"] == "success"
     assert sdk.identity_manager.agent_id is None
     assert sdk.network_status == "OFFLINE"
@@ -149,10 +156,12 @@ def test_request_signatures_use_timestamp_only_and_agent_card_encoding_order(sdk
 
     result, capability_response = sdk.register_agent_attribute(agent_id, ["pick"])
     assert result is True
+    capability_response = _decode_json_result(capability_response)
     agent_card_request = sdk.http_client._session.requests[1][1]
 
     result, deregister_response = sdk.deregister_robot(agent_id, "retired")
     assert result is True
+    deregister_response = _decode_json_result(deregister_response)
     deregister_request = sdk.http_client._session.requests[2][1]
 
     assert "priority" not in identity_request
@@ -209,7 +218,7 @@ def test_connect_network_uses_new_config_ports(sdk_environment: object) -> None:
     assert sdk.config.network.acn_agent_url == "http://127.0.0.1:9010"
 
     result = sdk.connect_network()
-    assert result == (True,)
+    assert result == (True, "ONLINE")
 
     assert sdk.network_status == "ONLINE"
     assert sdk.websocket_client is not None
@@ -223,7 +232,7 @@ def test_connect_network_uses_new_config_ports(sdk_environment: object) -> None:
     assert sdk.moq_sub_client.remote_port == 9003
     assert sdk.moq_sub_client.role == "subscriber"
 
-    assert sdk.disconnect_all() == (True,)
+    assert sdk.disconnect_all() == (True, "OFFLINE")
     assert sdk.network_status == "OFFLINE"
 
 
@@ -258,21 +267,31 @@ def test_join_network_and_task_flow(sdk_environment: object) -> None:
     assert joined_agent_id == agent_id
     assert sdk.network_status == "ONLINE"
     assert websocket_client.sent_messages[0]["type"] == "SETUP"
+    assert sdk.pipeline_log_reporter is not None
+    assert any(
+        record["protocol"] == "WebSocket" and record["abstract"] == "WebSocket setup handshake"
+        for record in sdk.pipeline_log_reporter.records
+    )
 
     result, task_id = sdk.request_task_execution(agent_id, "可疑人员驱离")
     assert result is True
     assert task_id.startswith("task-")
 
-    result, report_task_id, report_topic = sdk.task_info_report(agent_id, task_id, "Location", b"payload")
+    result, report_payload = sdk.task_info_report(agent_id, task_id, "Location", b"payload")
     assert result is True
-    assert report_task_id == task_id
-    assert report_topic == "Location"
+    report_payload = _decode_json_result(report_payload)
+    assert report_payload == {"task_id": task_id, "topic": "Location"}
     assert moq_clients["publisher"].published == [(f"/{task_id}/{agent_id}", "Location")]
     assert moq_clients["publisher"].sent_objects == [(f"/{task_id}/{agent_id}", "Location", b"payload")]
     assert websocket_client.sent_messages[1]["type"] == "PUBLISH_TRACK"
+    assert any(
+        record["protocol"] == "MoQ" and record["abstract"] == "Send MoQ object"
+        for record in sdk.pipeline_log_reporter.records
+    )
 
     result, collaboration_response = sdk.request_task_collaboration(agent_id, task_id, ["speaker", "light"])
     assert result is True
+    collaboration_response = _decode_json_result(collaboration_response)
     assert collaboration_response["result"] == "success"
 
     collaborator_agent_id = "did:acn:agent:peer-1"
@@ -282,19 +301,20 @@ def test_join_network_and_task_flow(sdk_environment: object) -> None:
     assert websocket_client.sent_messages[-1]["type"] == "TASK_ACCEPT_COLLABORATION"
     assert websocket_client.sent_messages[-1]["payload"]["dst_agent_id"] == collaborator_agent_id
 
-    result, started_task_id, dst_agent_id = sdk.start_task_collaboration(
+    result, started_task_response = sdk.start_task_collaboration(
         agent_id,
         "did:acn:agent:peer-1",
         task_id,
         "协同声光驱离",
     )
     assert result is True
-    assert started_task_id == task_id
-    assert dst_agent_id == "did:acn:agent:peer-1"
+    started_task_response = _decode_json_result(started_task_response)
+    assert started_task_response == {"task_id": task_id, "dst_agent_id": "did:acn:agent:peer-1"}
     assert websocket_client.sent_messages[-1]["type"] == "START_TASK"
 
     result, termination_response = sdk.request_terminate_task(agent_id, task_id, "completed", force=False)
     assert result is True
+    termination_response = _decode_json_result(termination_response)
     assert termination_response["result"] == "success"
 
     result, _ = sdk.handle_network_message(
@@ -366,12 +386,12 @@ def test_task_info_report_requires_join_network_for_moq_connections(sdk_environm
     )
     result, agent_id = sdk.register_agent_info(robot_info)
     assert result is True
-    assert sdk.connect_network() == (True,)
+    assert sdk.connect_network() == (True, "ONLINE")
 
     result, message = sdk.task_info_report(agent_id, "task-12345", "Location", b"payload")
     assert result is False
     assert "not connected" in message
-    assert sdk.disconnect_all() == (True,)
+    assert sdk.disconnect_all() == (True, "OFFLINE")
 
 
 def test_join_network_starts_background_listener_for_subscribe_track(sdk_environment: object) -> None:
@@ -439,7 +459,7 @@ def test_register_callbacks_dispatches_websocket_and_moq_messages(sdk_environmen
         on_discover_result_received=lambda payload: ws_messages.append(("DISCOVER_RESULT", payload)),
         on_task_start_command=lambda payload: ws_messages.append(("START_TASK", payload)),
         on_moq_message_received=lambda namespace, track, payload: moq_messages.append((namespace, track, payload)),
-    ) == (True,)
+    ) == (True, "OK")
 
     assert sdk.handle_network_message(
         {
@@ -493,6 +513,7 @@ def test_deregister_robot_sends_disconnection_when_online(sdk_environment: objec
     result, response = sdk.deregister_robot(agent_id, "retired")
 
     assert result is True
+    response = _decode_json_result(response)
     assert response["result"] == "success"
     assert websocket_client.sent_messages[-1]["type"] == "DISCONNECTION"
     assert sdk.network_status == "OFFLINE"
@@ -508,7 +529,7 @@ def test_reload_config_reflects_yaml_changes(sdk_environment: object) -> None:
     config_path = Path(config.storage.identity_file).parent / "config.yaml"
     config.save(config_path)
 
-    assert sdk.reload_config() == (True,)
+    assert sdk.reload_config() == (True, "OK")
 
     assert sdk.config.network.acn_agent_port == 9110
     assert sdk.config.network.agent_gw_ws_port == 9012
@@ -550,12 +571,18 @@ def test_request_task_collaboration_uses_arf_http_endpoint(sdk_environment: obje
 
     result, response = sdk.request_task_collaboration(agent_id, "task-12345", ["speaker"])
     assert result is True
+    response = _decode_json_result(response)
     assert response["result"] == "success"
     assert sdk.http_client.base_url == "http://127.0.0.1:9010"
     assert sdk.http_client.arf_base_url == "http://127.0.0.1:9001"
     assert sdk.http_client._arf_session.requests[-1][0] == "/arf/v1/agent-discoveries"
     assert not sdk.http_client._session.requests or all(
         request[0] != "/arf/v1/agent-discoveries" for request in sdk.http_client._session.requests
+    )
+    assert sdk.pipeline_log_reporter is not None
+    assert any(
+        record["protocol"] == "HTTP" and record["destination"] == "ARF"
+        for record in sdk.pipeline_log_reporter.records
     )
 
 

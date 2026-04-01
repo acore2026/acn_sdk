@@ -14,6 +14,7 @@ from .crypto import ensure_ec_keypair, load_public_key_pem, sign_timestamp
 from .identity.identity_manager import IdentityManager
 from .logging_config import setup_logging
 from .logging_utils import format_json_for_log
+from .reporting.pipeline_log_reporter import PipelineLogReporter
 from .models import (
     AgentCardRequest,
     AgentDiscoveryRequest,
@@ -57,6 +58,7 @@ class AcnSDK:
         self.websocket_client: WebSocketClient | None = None
         self.moq_pub_client: MoQClient | None = None
         self.moq_sub_client: MoQClient | None = None
+        self.pipeline_log_reporter: PipelineLogReporter | None = None
         self.task_manager: TaskManager | None = None
         self.network_status = "OFFLINE"
         self._published_tracks: set[str] = set()
@@ -83,7 +85,7 @@ class AcnSDK:
         on_discover_result_received: Any | None = None,
         on_task_start_command: Any | None = None,
         on_moq_message_received: Any | None = None,
-    ) -> tuple[Any, ...]:
+    ) -> tuple[bool, str]:
         try:
             if on_message_received is not None:
                 self.on_message_received = on_message_received
@@ -95,12 +97,12 @@ class AcnSDK:
                 self.on_task_start_command = on_task_start_command
             if on_moq_message_received is not None:
                 self.on_moq_message_received = on_moq_message_received
-            return (True,)
+            return (True, "OK")
         except Exception as exc:
             self._logger.exception("Failed to register callbacks.")
             return (False, str(exc))
 
-    def reload_config(self) -> tuple[Any, ...]:
+    def reload_config(self) -> tuple[bool, str]:
         try:
             if any(
                 client is not None
@@ -116,12 +118,12 @@ class AcnSDK:
             self.config = SDKConfig.load(self.config_path)
             self._apply_config()
             self._logger.info("Reloaded configuration from %s", self.config_path)
-            return (True,)
+            return (True, "OK")
         except Exception as exc:
             self._logger.exception("Failed to reload configuration from %s.", self.config_path)
             return (False, str(exc))
 
-    def register_agent_info(self, robot_info: RobotInfo) -> tuple[Any, ...]:
+    def register_agent_info(self, robot_info: RobotInfo) -> tuple[bool, str]:
         try:
             timestamp = self._utc_timestamp()
             payload = {
@@ -135,6 +137,15 @@ class AcnSDK:
             payload["signature"] = sign_timestamp(self.config.storage.private_key_file, timestamp)
             payload["signature_encoding"] = "base64"
 
+            self._report_pipeline_log(
+                protocol="HTTP",
+                destination="ACN Agent",
+                method="POST",
+                url="/idm/v1/identity-applications",
+                headers={"Content-Type": "application/json"},
+                abstract="Register agent identity",
+                content=payload,
+            )
             response = self.http_client.register_agent_info(payload)
             agent_id = response["agent_id"]
             vc0 = response["vc0"]
@@ -152,7 +163,7 @@ class AcnSDK:
             self._logger.exception("Failed to register robot info for robot=%s.", robot_info.name)
             return (False, str(exc))
 
-    def register_agent_attribute(self, agent_id: str, capability: list[str] | str) -> tuple[Any, ...]:
+    def register_agent_attribute(self, agent_id: str, capability: list[str] | str) -> tuple[bool, str]:
         try:
             if not self.identity_manager.agent_id or not self.identity_manager.vc0:
                 raise RuntimeError("Robot identity must be registered before capabilities.")
@@ -183,14 +194,23 @@ class AcnSDK:
             )
             if self.http_client is None:
                 raise RuntimeError("HTTP client is not initialized.")
+            self._report_pipeline_log(
+                protocol="HTTP",
+                destination="ACN Agent",
+                method="POST",
+                url="/arf/v1/agent-cards",
+                headers={"Content-Type": "application/json"},
+                abstract="Register agent capabilities",
+                content=payload.model_dump(mode="json"),
+            )
             response = self.http_client.register_agent_attribute(payload)
             self._logger.info("Robot attribute registered. response=\n%s", format_json_for_log(response))
-            return (True, response)
+            return (True, self._stringify_result(response))
         except Exception as exc:
             self._logger.exception("Failed to register robot attribute for agent_id=%s.", agent_id)
             return (False, str(exc))
 
-    def query_robot_id(self, robot_name: str, owner: str) -> tuple[Any, ...]:
+    def query_robot_id(self, robot_name: str, owner: str) -> tuple[bool, str]:
         try:
             agent_id = self.identity_manager.query_robot_id(robot_name, owner)
             self._logger.info(
@@ -199,12 +219,12 @@ class AcnSDK:
                 owner,
                 agent_id,
             )
-            return (agent_id is not None, agent_id)
+            return (agent_id is not None, agent_id or "")
         except Exception as exc:
             self._logger.exception("Failed to query robot identity robot_name=%s owner=%s.", robot_name, owner)
             return (False, str(exc))
 
-    def deregister_robot(self, agent_id: str, reason: str) -> tuple[Any, ...]:
+    def deregister_robot(self, agent_id: str, reason: str) -> tuple[bool, str]:
         try:
             if self.identity_manager.agent_id != agent_id:
                 raise ValueError("The supplied agent_id does not match this device.")
@@ -216,24 +236,44 @@ class AcnSDK:
                 timestamp=timestamp,
                 signature=sign_timestamp(self.config.storage.private_key_file, timestamp),
             )
+            self._report_pipeline_log(
+                protocol="HTTP",
+                destination="ACN Agent",
+                method="POST",
+                url="/acn-agent/v1/agent-deletions",
+                headers={"Content-Type": "application/json"},
+                abstract="Deregister agent",
+                content=request.model_dump(mode="json"),
+            )
             response = self.http_client.deregister_robot(request)
 
             if self.network_status == "ONLINE" and self.websocket_client is not None:
+                disconnection_message = self._build_ws_message(
+                    "DISCONNECTION",
+                    {"src_agent_id": agent_id},
+                )
+                self._report_pipeline_log(
+                    protocol="WebSocket",
+                    destination="Agent GW",
+                    method="SEND",
+                    url=self.config.network.agent_gw_ws_url,
+                    headers={},
+                    abstract="WebSocket disconnection",
+                    content=disconnection_message,
+                    task_id=None,
+                )
                 self.websocket_client.send_json(
-                    self._build_ws_message(
-                        "DISCONNECTION",
-                        {"src_agent_id": agent_id},
-                    )
+                    disconnection_message
                 )
             self.identity_manager.clear()
             self.disconnect_all()
             self._logger.info("Robot deregistered. response=\n%s", format_json_for_log(response))
-            return (True, response)
+            return (True, self._stringify_result(response))
         except Exception as exc:
             self._logger.exception("Failed to deregister robot agent_id=%s.", agent_id)
             return (False, str(exc))
 
-    def join_network(self, agent_id: str) -> tuple[Any, ...]:
+    def join_network(self, agent_id: str) -> tuple[bool, str]:
         try:
             self._require_local_agent(agent_id)
             if self.network_status == "ONLINE":
@@ -246,11 +286,21 @@ class AcnSDK:
 
             try:
                 self.websocket_client.connect()
+                setup_message = self._build_ws_message(
+                    "SETUP",
+                    {"src_agent_id": agent_id},
+                )
+                self._report_pipeline_log(
+                    protocol="WebSocket",
+                    destination="Agent GW",
+                    method="SEND",
+                    url=self.config.network.agent_gw_ws_url,
+                    headers={},
+                    abstract="WebSocket setup handshake",
+                    content=setup_message,
+                )
                 self.websocket_client.send_json(
-                    self._build_ws_message(
-                        "SETUP",
-                        {"src_agent_id": agent_id},
-                    )
+                    setup_message
                 )
                 response = self.websocket_client.receive_json()
                 if response.get("type") != "SETUP" or response.get("payload", {}).get("status") != "OK":
@@ -269,17 +319,27 @@ class AcnSDK:
             self._logger.exception("Failed to join network for agent_id=%s.", agent_id)
             return (False, str(exc))
 
-    def logout_network(self, agent_id: str) -> tuple[Any, ...]:
+    def logout_network(self, agent_id: str) -> tuple[bool, str]:
         try:
             self._require_local_agent(agent_id)
             if self.network_status != "ONLINE":
                 raise RuntimeError("Robot is not online.")
             if self.websocket_client is not None:
+                disconnection_message = self._build_ws_message(
+                    "DISCONNECTION",
+                    {"src_agent_id": agent_id},
+                )
+                self._report_pipeline_log(
+                    protocol="WebSocket",
+                    destination="Agent GW",
+                    method="SEND",
+                    url=self.config.network.agent_gw_ws_url,
+                    headers={},
+                    abstract="WebSocket disconnection",
+                    content=disconnection_message,
+                )
                 self.websocket_client.send_json(
-                    self._build_ws_message(
-                        "DISCONNECTION",
-                        {"src_agent_id": agent_id},
-                    )
+                    disconnection_message
                 )
             self.disconnect_all(close_http=False)
             return (True, agent_id)
@@ -287,7 +347,7 @@ class AcnSDK:
             self._logger.exception("Failed to logout network for agent_id=%s.", agent_id)
             return (False, str(exc))
 
-    def request_task_execution(self, agent_id: str, task_info: str, task_id: str | None = None) -> tuple[Any, ...]:
+    def request_task_execution(self, agent_id: str, task_info: str, task_id: str | None = None) -> tuple[bool, str]:
         try:
             self._require_online_agent(agent_id)
             task_id = task_id or self._generate_task_id()
@@ -296,6 +356,16 @@ class AcnSDK:
                 task_id=task_id,
                 description=task_info,
                 timestamp=self._utc_timestamp(),
+            )
+            self._report_pipeline_log(
+                protocol="HTTP",
+                destination="ACN Agent",
+                method="POST",
+                url="/acn-agent/v1/task-executions",
+                headers={"Content-Type": "application/json"},
+                abstract="Request task execution",
+                content=request.model_dump(mode="json"),
+                task_id=task_id,
             )
             response = self.http_client.request_task_execution(request)
             task_id = response.get("task_id", task_id)
@@ -315,7 +385,7 @@ class AcnSDK:
         task_id: str,
         reason: str = "",
         force: bool = False,
-    ) -> tuple[Any, ...]:
+    ) -> tuple[bool, str]:
         try:
             self._require_online_agent(agent_id)
             request = TaskTerminationRequest(
@@ -325,16 +395,26 @@ class AcnSDK:
                 timestamp=self._utc_timestamp(),
                 force=force,
             )
+            self._report_pipeline_log(
+                protocol="HTTP",
+                destination="ACN Agent",
+                method="POST",
+                url="/acn-agent/v1/task-execution-terminations",
+                headers={"Content-Type": "application/json"},
+                abstract="Request task termination",
+                content=request.model_dump(mode="json"),
+                task_id=task_id,
+            )
             response = self.http_client.request_terminate_task(request)
             if task_id in self._task_registry:
                 self._task_registry[task_id]["status"] = "terminated"
             self._logger.info("Task termination requested. task_id=%s response=\n%s", task_id, format_json_for_log(response))
-            return (True, response)
+            return (True, self._stringify_result(response))
         except Exception as exc:
             self._logger.exception("Failed to request task termination for task_id=%s.", task_id)
             return (False, str(exc))
 
-    def task_info_report(self, agent_id: str, task_id: str, topic: str, message_info: bytes) -> tuple[Any, ...]:
+    def task_info_report(self, agent_id: str, task_id: str, topic: str, message_info: bytes) -> tuple[bool, str]:
         try:
             self._require_online_agent(agent_id)
             namespace = f"/{task_id}/{agent_id}"
@@ -344,21 +424,53 @@ class AcnSDK:
                 raise RuntimeError("MoQ publisher is not connected. Call join_network() first.")
 
             if track_key not in self._published_tracks:
+                moq_url = f"moq://{self.config.network.network_ip}:{self.config.network.agent_gw_moq_port}"
+                self._report_pipeline_log(
+                    protocol="MoQ",
+                    destination="Agent GW",
+                    method="PUBLISH",
+                    url=moq_url,
+                    headers={},
+                    abstract="Publish MoQ track",
+                    content={"namespace": namespace, "track": topic},
+                    task_id=task_id,
+                )
                 self.moq_pub_client.publish(namespace, topic)
                 if self.websocket_client is None:
                     raise RuntimeError("WebSocket is not connected.")
+                publish_track_message = self._build_ws_message(
+                    "PUBLISH_TRACK",
+                    {
+                        "src_agent_id": agent_id,
+                        "task_id": task_id,
+                        "track_list": [{"namespace": namespace, "track": topic}],
+                    },
+                )
+                self._report_pipeline_log(
+                    protocol="WebSocket",
+                    destination="Agent GW",
+                    method="SEND",
+                    url=self.config.network.agent_gw_ws_url,
+                    headers={},
+                    abstract="Announce MoQ published track",
+                    content=publish_track_message,
+                    task_id=task_id,
+                )
                 self.websocket_client.send_json(
-                    self._build_ws_message(
-                        "PUBLISH_TRACK",
-                        {
-                            "src_agent_id": agent_id,
-                            "task_id": task_id,
-                            "track_list": [{"namespace": namespace, "track": topic}],
-                        },
-                    )
+                    publish_track_message
                 )
                 self._published_tracks.add(track_key)
 
+            self._report_pipeline_log(
+                protocol="MoQ",
+                destination="Agent GW",
+                method="SEND",
+                url=f"moq://{self.config.network.network_ip}:{self.config.network.agent_gw_moq_port}",
+                headers={},
+                abstract="Send MoQ object",
+                content=message_info,
+                task_id=task_id,
+            )
             self.moq_pub_client.send_object(namespace, topic, message_info)
             self._logger.info(
                 "Task info reported. agent_id=%s task_id=%s topic=%s payload_size=%s",
@@ -367,7 +479,7 @@ class AcnSDK:
                 topic,
                 len(message_info),
             )
-            return (True, task_id, topic)
+            return (True, self._stringify_result({"task_id": task_id, "topic": topic}))
         except Exception as exc:
             self._logger.exception("Failed to report task info for task_id=%s topic=%s.", task_id, topic)
             return (False, str(exc))
@@ -377,7 +489,7 @@ class AcnSDK:
         agent_id: str,
         task_id: str,
         required_capabilities: str | list[str],
-    ) -> tuple[Any, ...]:
+    ) -> tuple[bool, str]:
         try:
             self._require_online_agent(agent_id)
             capability_list = [required_capabilities] if isinstance(required_capabilities, str) else required_capabilities
@@ -389,9 +501,19 @@ class AcnSDK:
             )
             if self.http_client is None:
                 raise RuntimeError("HTTP client is not initialized.")
+            self._report_pipeline_log(
+                protocol="HTTP",
+                destination="ARF",
+                method="POST",
+                url="/arf/v1/agent-discoveries",
+                headers={"Content-Type": "application/json"},
+                abstract="Request task collaboration",
+                content=request.model_dump(mode="json"),
+                task_id=task_id,
+            )
             response = self.http_client.request_task_collaboration(request)
             self._logger.info("Task collaboration requested. task_id=%s response=\n%s", task_id, format_json_for_log(response))
-            return (True, response)
+            return (True, self._stringify_result(response))
         except Exception as exc:
             self._logger.exception("Failed to request task collaboration for task_id=%s.", task_id)
             return (False, str(exc))
@@ -401,7 +523,7 @@ class AcnSDK:
         agent_id: str,
         task_id: str,
         dst_agent_id: str | None = None,
-    ) -> tuple[Any, ...]:
+    ) -> tuple[bool, str]:
         try:
             self._require_online_agent(agent_id)
             if self.websocket_client is None:
@@ -420,6 +542,16 @@ class AcnSDK:
                     "result": "OK",
                 },
             )
+            self._report_pipeline_log(
+                protocol="WebSocket",
+                destination="Agent GW",
+                method="SEND",
+                url=self.config.network.agent_gw_ws_url,
+                headers={},
+                abstract="Accept task collaboration",
+                content=message,
+                task_id=task_id,
+            )
             self.websocket_client.send_json(message)
             self._logger.info("Task collaboration accepted. task_id=%s dst_agent_id=%s", task_id, dst_agent_id)
             return (True, task_id)
@@ -433,7 +565,7 @@ class AcnSDK:
         dst_agent_id: str,
         task_id: str,
         task_description: str,
-    ) -> tuple[Any, ...]:
+    ) -> tuple[bool, str]:
         try:
             self._require_online_agent(agent_id)
             if self.websocket_client is None:
@@ -447,6 +579,16 @@ class AcnSDK:
                     "task_description": task_description,
                 },
             )
+            self._report_pipeline_log(
+                protocol="WebSocket",
+                destination="Agent GW",
+                method="SEND",
+                url=self.config.network.agent_gw_ws_url,
+                headers={},
+                abstract="Start task collaboration",
+                content=message,
+                task_id=task_id,
+            )
             self.websocket_client.send_json(message)
             self._logger.info(
                 "Start task message sent. src_agent_id=%s dst_agent_id=%s task_id=%s",
@@ -454,12 +596,12 @@ class AcnSDK:
                 dst_agent_id,
                 task_id,
             )
-            return (True, task_id, dst_agent_id)
+            return (True, self._stringify_result({"task_id": task_id, "dst_agent_id": dst_agent_id}))
         except Exception as exc:
             self._logger.exception("Failed to start task task_id=%s dst_agent_id=%s.", task_id, dst_agent_id)
             return (False, str(exc))
 
-    def handle_network_message(self, message: str | dict[str, Any]) -> tuple[Any, ...]:
+    def handle_network_message(self, message: str | dict[str, Any]) -> tuple[bool, str]:
         try:
             parsed_message = json.loads(message) if isinstance(message, str) else message
             envelope = WebSocketMessage.model_validate(parsed_message)
@@ -489,12 +631,12 @@ class AcnSDK:
 
             if self.on_message_received is not None:
                 self.on_message_received(message_type, payload)
-            return (True, parsed_message)
+            return (True, self._stringify_result(parsed_message))
         except Exception as exc:
             self._logger.exception("Failed to handle network message.")
             return (False, str(exc))
 
-    def connect_network(self) -> tuple[Any, ...]:
+    def connect_network(self) -> tuple[bool, str]:
         try:
             self.websocket_client = self._create_websocket_client()
             self.moq_pub_client = self._create_moq_client("publisher")
@@ -502,17 +644,19 @@ class AcnSDK:
             self.task_manager = TaskManager()
             self.network_status = "ONLINE"
             self._logger.info("Network components initialized without handshake. network_status=%s", self.network_status)
-            return (True,)
+            return (True, "ONLINE")
         except Exception as exc:
             self._logger.exception("Failed to initialize network components.")
             return (False, str(exc))
 
-    def disconnect_all(self, close_http: bool = True) -> tuple[Any, ...]:
+    def disconnect_all(self, close_http: bool = True) -> tuple[bool, str]:
         try:
             self._stop_network_listener()
             if close_http:
                 if self.http_client is not None:
                     self.http_client.close()
+                if self.pipeline_log_reporter is not None:
+                    self.pipeline_log_reporter.close()
             if self.websocket_client is not None:
                 self.websocket_client.disconnect()
                 self.websocket_client = None
@@ -529,7 +673,7 @@ class AcnSDK:
             self._subscribed_tracks.clear()
             self.network_status = "OFFLINE"
             self._logger.info("Network state changed to %s", self.network_status)
-            return (True,)
+            return (True, "OFFLINE")
         except Exception as exc:
             self._logger.exception("Failed to disconnect network components.")
             return (False, str(exc))
@@ -539,6 +683,7 @@ class AcnSDK:
         self._logger = logging.getLogger(self.__class__.__name__)
         self.identity_manager = IdentityManager(self.config.storage.identity_file)
         self.http_client = HttpClient(self.config.network.acn_agent_url, self.config.network.arf_url)
+        self.pipeline_log_reporter = PipelineLogReporter(self.config.network.web_ui_url)
         ensure_ec_keypair(
             self.config.storage.private_key_file,
             self.config.storage.public_key_file,
@@ -569,6 +714,16 @@ class AcnSDK:
             track_key = self._track_key(namespace, track)
             if track_key in self._subscribed_tracks or track_key in self._published_tracks:
                 continue
+            self._report_pipeline_log(
+                protocol="MoQ",
+                destination="Agent GW",
+                method="SUBSCRIBE",
+                url=f"moq://{self.config.network.network_ip}:{self.config.network.agent_gw_moq_port}",
+                headers={},
+                abstract="Subscribe MoQ track",
+                content={"namespace": namespace, "track": track, "subscriber_id": local_agent_id},
+                task_id=payload.get("task_id"),
+            )
             self.moq_sub_client.subscribe(namespace, track, local_agent_id)
             self._subscribed_tracks.add(track_key)
 
@@ -642,6 +797,41 @@ class AcnSDK:
             timestamp=self._utc_timestamp(),
             payload=payload,
         ).model_dump(mode="json")
+
+    def _report_pipeline_log(
+        self,
+        *,
+        protocol: str,
+        destination: str,
+        method: str,
+        url: str,
+        headers: dict[str, str] | None,
+        abstract: str,
+        content: Any,
+        task_id: str | None = None,
+    ) -> None:
+        if self.pipeline_log_reporter is None:
+            return
+        self.pipeline_log_reporter.report(
+            source="ACN SDK",
+            destination=destination,
+            protocol=protocol,
+            method=method,
+            url=url,
+            headers=headers,
+            abstract=abstract,
+            content=content,
+            task_id=task_id,
+        )
+
+    @staticmethod
+    def _stringify_result(value: Any) -> str:
+        if isinstance(value, str):
+            return value
+        try:
+            return json.dumps(value, ensure_ascii=False, sort_keys=True)
+        except TypeError:
+            return str(value)
 
     @staticmethod
     def _dispatch_message_callback(callback_name: str, callback: Any | None, payload: dict[str, Any]) -> None:

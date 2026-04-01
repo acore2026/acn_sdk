@@ -13,6 +13,19 @@ import acn_sdk.sdk as sdk_module
 from acn_sdk.network.http_client import HttpClient
 
 
+class MockPipelineLogReporter:
+    def __init__(self, web_ui_url: str, session: object | None = None) -> None:
+        self.web_ui_url = web_ui_url
+        self.session = session
+        self.records: list[dict[str, Any]] = []
+
+    def report(self, **payload: Any) -> None:
+        self.records.append(payload)
+
+    def close(self) -> None:
+        return None
+
+
 class MockResponse:
     def __init__(self, status_code: int, payload: dict[str, Any]) -> None:
         self.status_code = status_code
@@ -147,6 +160,7 @@ def sdk_environment(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> SDKConfi
         _build_http_client_init(MockHttpSession("acn_agent"), MockHttpSession("arf")),
         raising=False,
     )
+    monkeypatch.setattr(sdk_module, "PipelineLogReporter", MockPipelineLogReporter)
     return config
 
 

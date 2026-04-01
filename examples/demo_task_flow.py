@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import json
+import sys
 import tempfile
 import time
 from pathlib import Path
 
 import httpx
+
+sys.path.append("..")
 
 from acn_sdk import AcnSDK, RobotInfo
 from acn_sdk.config import SDKConfig

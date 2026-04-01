@@ -4,10 +4,10 @@
 
 返回值约定：
 
-- `AcnSDK` 对机器人暴露的公共接口统一返回 `Tuple`
+- `AcnSDK` 对机器人暴露的公共接口统一返回 `tuple[bool, str]`
 - 第一个元素固定为 `result`，类型为 `bool`
-- `True` 时，后续元素为对应业务结果
-- `False` 时，第二个元素通常为错误信息字符串
+- `True` 时，第二个元素为业务结果字符串，复杂结果通常用 JSON 字符串编码
+- `False` 时，第二个元素为错误信息字符串
 
 包结构：
 
@@ -34,7 +34,7 @@ acn_sdk.task.task_manager.TaskManager
 - `issuer_id` 目前保留为兼容参数；能力 VC 的实际发放者已改为按能力名称自动选择
 - 可通过 `config_path` 参数指定其他 YAML 配置文件；运行中修改 YAML 后可调用 `reload_config()` 重新加载
 
-### `register_callbacks(...) -> tuple[bool] | tuple[bool, str]`
+### `register_callbacks(...) -> tuple[bool, str]`
 
 注册业务侧回调。
 
@@ -48,7 +48,7 @@ acn_sdk.task.task_manager.TaskManager
 
 未注册对应回调时，SDK 会跳过对应处理，仅保留通用回调行为。
 
-### `reload_config() -> tuple[bool] | tuple[bool, str]`
+### `reload_config() -> tuple[bool, str]`
 
 重新读取 `config/config.yaml`（或 `config_path` 指定的文件），并刷新以下依赖：
 
@@ -98,7 +98,7 @@ POST /idm/v1/identity-applications
 - `IdentityManager` 保存 `agent_id`、`vc0`、机器人信息
 - `signature` 仅基于 `timestamp` 生成，编码采用 `base64`
 
-### `register_agent_attribute(agent_id: str, capability: list[str]) -> tuple[bool, dict[str, Any]] | tuple[bool, str]`
+### `register_agent_attribute(agent_id: str, capability: list[str]) -> tuple[bool, str]`
 
 先由 `CredentialIssuer` 按 `capability` 列表逐项模拟签发能力 VC，再向 `AcnAgent` 注册能力信息。
 
@@ -168,11 +168,11 @@ POST /arf/v1/agent-cards
 }
 ```
 
-### `query_robot_id(robot_name: str, owner: str) -> tuple[bool, str | None] | tuple[bool, str]`
+### `query_robot_id(robot_name: str, owner: str) -> tuple[bool, str]`
 
 本地查询当前设备保存的身份信息，命中则返回 `(True, agent_id)`，未命中返回 `(False, None)`。
 
-### `deregister_robot(agent_id: str, reason: str) -> tuple[bool, dict[str, Any]] | tuple[bool, str]`
+### `deregister_robot(agent_id: str, reason: str) -> tuple[bool, str]`
 
 请求去注册。只有传入的 `agent_id` 与本机一致时才允许执行。
 
@@ -235,7 +235,7 @@ POST /acn-agent/v1/task-executions
 - 成功时返回 `(True, task_id)`
 - 失败时返回 `(False, error_message)`
 
-### `request_terminate_task(agent_id: str, task_id: str, reason: str = "", force: bool = False) -> tuple[bool, dict[str, Any]] | tuple[bool, str]`
+### `request_terminate_task(agent_id: str, task_id: str, reason: str = "", force: bool = False) -> tuple[bool, str]`
 
 任务终止请求。
 
@@ -245,7 +245,7 @@ POST /acn-agent/v1/task-executions
 POST /acn-agent/v1/task-execution-terminations
 ```
 
-### `task_info_report(agent_id: str, task_id: str, topic: str, message_info: bytes) -> tuple[bool, str, str] | tuple[bool, str]`
+### `task_info_report(agent_id: str, task_id: str, topic: str, message_info: bytes) -> tuple[bool, str]`
 
 任务信息上报。
 
@@ -258,7 +258,7 @@ POST /acn-agent/v1/task-execution-terminations
 - 然后执行 MOQ `send_object`
 - 当前实现默认使用 MOQ datagram 发送对象，便于本地 relay 联调
 
-### `request_task_collaboration(agent_id: str, task_id: str, required_capabilities: str | list[str]) -> tuple[bool, dict[str, Any]] | tuple[bool, str]`
+### `request_task_collaboration(agent_id: str, task_id: str, required_capabilities: str | list[str]) -> tuple[bool, str]`
 
 请求协同智能体。
 
@@ -278,11 +278,11 @@ POST /arf/v1/agent-discoveries
 
 - `dst_agent_id` 为空时，SDK 会优先使用最近一次 `TASK_REQUEST_COLLABORATION` 中的 `src_agent_id`。
 
-### `start_task_collaboration(agent_id: str, dst_agent_id: str, task_id: str, task_description: str) -> tuple[bool, str, str] | tuple[bool, str]`
+### `start_task_collaboration(agent_id: str, dst_agent_id: str, task_id: str, task_description: str) -> tuple[bool, str]`
 
 发送 WebSocket `START_TASK`，用于通知协作方开始执行任务。
 
-### `handle_network_message(message: str | dict[str, Any]) -> tuple[bool, dict[str, Any]] | tuple[bool, str]`
+### `handle_network_message(message: str | dict[str, Any]) -> tuple[bool, str]`
 
 处理服务端下发的 WebSocket 消息。
 
@@ -295,11 +295,11 @@ POST /arf/v1/agent-discoveries
 - `START_TASK`：触发 `on_task_start_command(payload)` 回调
 - 其他消息类型：透传给初始化时注册的 `on_message_received(message_type, payload)` 回调
 
-### `connect_network() -> tuple[bool] | tuple[bool, str]`
+### `connect_network() -> tuple[bool, str]`
 
 保留的轻量连接方法，只做本地网络组件初始化，不执行 WebSocket `SETUP` 握手。更推荐使用 `join_network()`。
 
-### `disconnect_all() -> None`
+### `disconnect_all(close_http: bool = True) -> tuple[bool, str]`
 
 断开所有网络连接、停止任务，并把状态切回 `OFFLINE`。
 
