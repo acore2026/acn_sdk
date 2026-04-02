@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import sys
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -107,7 +108,15 @@ def main() -> None:
     write_runtime_value(session_dir, "task_id", task_id)
     print(f"task_id={task_id}")
 
-    print(initiator.task_info_report(initiator_id, task_id, "Location", current_location_bytes()))
+    first_reported_at = datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+    print(
+        initiator.task_info_report(
+            initiator_id,
+            task_id,
+            "Location",
+            current_location_bytes(seq=1, reported_at=first_reported_at),
+        )
+    )
 
     print(initiator.request_task_collaboration(initiator_id, task_id, ["声光驱离"]))
 
@@ -139,7 +148,14 @@ def main() -> None:
     )
     time.sleep(0.5)
 
-    report_task_info_for_duration(initiator, initiator_id, task_id, "Location", duration_seconds=args.report_duration)
+    report_task_info_for_duration(
+        initiator,
+        initiator_id,
+        task_id,
+        "Location",
+        duration_seconds=args.report_duration,
+        start_seq=2,
+    )
 
     try:
         print(initiator.request_terminate_task(initiator_id, task_id, "demo finished"))

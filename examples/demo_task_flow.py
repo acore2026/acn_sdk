@@ -4,6 +4,7 @@ import json
 import sys
 import tempfile
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 
 import httpx
@@ -112,12 +113,16 @@ def build_config(base_dir: Path, identity_name: str) -> Path:
     return config_path
 
 
-def current_location_bytes() -> bytes:
+def current_location_bytes(*, seq: int | None = None, reported_at: str | None = None) -> bytes:
     payload = {
         "longitude": 116.404,
         "latitude": 39.915,
         "altitude": 50.5,
     }
+    if seq is not None:
+        payload["seq"] = seq
+    if reported_at is not None:
+        payload["reported_at"] = reported_at
     return json.dumps(payload, ensure_ascii=False).encode("utf-8")
 
 
@@ -128,11 +133,20 @@ def report_task_info_for_duration(
     topic: str,
     duration_seconds: float,
     interval_seconds: float = 1.0,
+    start_seq: int = 1,
 ) -> None:
+    seq = start_seq
     deadline = time.monotonic() + duration_seconds
     while True:
-        response = sdk.task_info_report(agent_id, task_id, topic, current_location_bytes())
+        reported_at = datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+        response = sdk.task_info_report(
+            agent_id,
+            task_id,
+            topic,
+            current_location_bytes(seq=seq, reported_at=reported_at),
+        )
         print(response)
+        seq += 1
         if time.monotonic() >= deadline:
             break
         time.sleep(interval_seconds)
@@ -226,7 +240,15 @@ def main() -> None:
     if not task_ok:
         raise RuntimeError(task_id)
     print(f"task_id={task_id}")
-    print(initiator.task_info_report(initiator_id, task_id, "Location", current_location_bytes()))
+    first_reported_at = datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+    print(
+        initiator.task_info_report(
+            initiator_id,
+            task_id,
+            "Location",
+            current_location_bytes(seq=1, reported_at=first_reported_at),
+        )
+    )
     time.sleep(0.2)
 
     print(initiator.request_task_collaboration(initiator_id, task_id, ["声光驱离"]))
@@ -259,7 +281,14 @@ def main() -> None:
     )
     time.sleep(0.2)
 
-    report_task_info_for_duration(initiator, initiator_id, task_id, "Location", duration_seconds=30.0)
+    report_task_info_for_duration(
+        initiator,
+        initiator_id,
+        task_id,
+        "Location",
+        duration_seconds=30.0,
+        start_seq=2,
+    )
     collaborator.request_terminate_task(collaborator_id, task_id, "demo finished")
     collaborator.logout_network(collaborator_id)
     initiator.logout_network(initiator_id)

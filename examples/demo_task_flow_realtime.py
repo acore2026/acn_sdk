@@ -6,6 +6,7 @@ import sys
 import tempfile
 import threading
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -146,7 +147,15 @@ def main() -> None:
         raise RuntimeError(task_id)
     task_id_holder["value"] = task_id
     print(f"task_id={task_id}")
-    print(initiator.task_info_report(initiator_id, task_id, "Location", current_location_bytes()))
+    first_reported_at = datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+    print(
+        initiator.task_info_report(
+            initiator_id,
+            task_id,
+            "Location",
+            current_location_bytes(seq=1, reported_at=first_reported_at),
+        )
+    )
 
     print(initiator.request_task_collaboration(initiator_id, task_id, ["声光驱离"]))
 
@@ -155,7 +164,14 @@ def main() -> None:
     _wait_event(task_start_received, args.wait_timeout, "START_TASK")
     _wait_event(subscribe_track_received, args.wait_timeout, "SUBSCRIBE_TRACK")
 
-    report_task_info_for_duration(initiator, initiator_id, task_id, "Location", duration_seconds=args.report_duration)
+    report_task_info_for_duration(
+        initiator,
+        initiator_id,
+        task_id,
+        "Location",
+        duration_seconds=args.report_duration,
+        start_seq=2,
+    )
     collaborator.request_terminate_task(collaborator_id, task_id, "demo finished")
     collaborator.logout_network(collaborator_id)
     initiator.logout_network(initiator_id)

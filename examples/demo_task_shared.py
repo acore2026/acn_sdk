@@ -4,6 +4,7 @@ import json
 import shutil
 import tempfile
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -50,12 +51,16 @@ def build_config(base_dir: Path, identity_name: str) -> Path:
     return config_path
 
 
-def current_location_bytes() -> bytes:
+def current_location_bytes(*, seq: int | None = None, reported_at: str | None = None) -> bytes:
     payload = {
         "longitude": 116.404,
         "latitude": 39.915,
         "altitude": 50.5,
     }
+    if seq is not None:
+        payload["seq"] = seq
+    if reported_at is not None:
+        payload["reported_at"] = reported_at
     return json.dumps(payload, ensure_ascii=False).encode("utf-8")
 
 
@@ -66,11 +71,20 @@ def report_task_info_for_duration(
     topic: str,
     duration_seconds: float,
     interval_seconds: float = 1.0,
+    start_seq: int = 1,
 ) -> None:
+    seq = start_seq
     deadline = time.monotonic() + duration_seconds
     while True:
-        response = sdk.task_info_report(agent_id, task_id, topic, current_location_bytes())
+        reported_at = datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+        response = sdk.task_info_report(
+            agent_id,
+            task_id,
+            topic,
+            current_location_bytes(seq=seq, reported_at=reported_at),
+        )
         print(response)
+        seq += 1
         if time.monotonic() >= deadline:
             break
         time.sleep(interval_seconds)
@@ -166,4 +180,3 @@ def wait_for_runtime_value(session_dir: Path, name: str, timeout_seconds: float 
             return path.read_text(encoding="utf-8").strip()
         time.sleep(0.2)
     raise RuntimeError(f"Timed out waiting for {name} in {session_dir}")
-
