@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import asyncio
+import threading
+
 from moq import FullTrackName
 
 from acn_sdk.network.moq_client import MoQClient
@@ -69,6 +72,17 @@ class FakeReceivedObject:
     def __init__(self, track_alias: int, payload: bytes) -> None:
         self.track_alias = track_alias
         self.payload = payload
+
+
+class BlockingSubscriber(FakeSubscriber):
+    def __init__(self, host: str, port: int) -> None:
+        super().__init__(host, port)
+        self.subscribe_started = threading.Event()
+
+    async def subscribe(self, track_name: FullTrackName) -> bool:
+        self.subscribe_started.set()
+        await asyncio.sleep(0.05)
+        return await super().subscribe(track_name)
 
 
 def test_moq_publisher_client_uses_real_track_encoding(monkeypatch) -> None:
@@ -146,3 +160,37 @@ def test_moq_client_disconnect_cleans_up_publications_and_subscriptions(monkeypa
     assert subscriber_impl.unsubscribed[0].track_name == b"Location"
     assert publisher._publisher is None
     assert subscriber._subscriber is None
+
+
+def test_moq_client_serializes_loop_access_across_threads(monkeypatch) -> None:
+    import acn_sdk.network.moq_client as moq_client_module
+
+    monkeypatch.setattr(moq_client_module, "MOQSubscriber", BlockingSubscriber)
+
+    client = MoQClient("127.0.0.1", 9003, "subscriber")
+    try:
+        client.connect()
+        assert isinstance(client._subscriber, BlockingSubscriber)
+        assert client._loop_thread is not None
+        assert client._loop_thread.is_alive() is True
+
+        subscribe_errors: list[BaseException] = []
+
+        def run_subscribe() -> None:
+            try:
+                client.subscribe("/task-123/agent-1", "Location", "agent-2")
+            except BaseException as exc:  # pragma: no cover - surfaced via assertions
+                subscribe_errors.append(exc)
+
+        subscribe_thread = threading.Thread(target=run_subscribe)
+        subscribe_thread.start()
+
+        assert client._subscriber.subscribe_started.wait(timeout=1.0) is True
+        subscribe_thread.join(timeout=1.0)
+
+        assert not subscribe_thread.is_alive()
+        assert subscribe_errors == []
+        assert client.is_subscribed("/task-123/agent-1", "Location", "agent-2") is True
+    finally:
+        client.disconnect()
+        assert client._loop_thread is None or client._loop_thread.is_alive() is False

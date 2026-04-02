@@ -156,8 +156,6 @@ def main() -> None:
     _wait_event(subscribe_track_received, args.wait_timeout, "SUBSCRIBE_TRACK")
 
     report_task_info_for_duration(initiator, initiator_id, task_id, "Location", duration_seconds=args.report_duration)
-    collaborator.moq_sub_client.pump(1.0)
-
     collaborator.request_terminate_task(collaborator_id, task_id, "demo finished")
     collaborator.logout_network(collaborator_id)
     initiator.logout_network(initiator_id)

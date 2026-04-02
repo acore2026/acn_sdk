@@ -2,8 +2,6 @@ from __future__ import annotations
 
 import argparse
 import sys
-import threading
-import time
 from pathlib import Path
 
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -35,24 +33,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--wait-timeout", type=float, default=120.0)
     parser.set_defaults(reset=True)
     return parser.parse_args()
-
-
-def _start_moq_pump_loop(sdk: AcnSDK, stop_event: threading.Event) -> threading.Thread:
-    def _loop() -> None:
-        while not stop_event.is_set():
-            client = sdk.moq_sub_client
-            if client is None:
-                time.sleep(0.1)
-                continue
-            try:
-                client.pump(0.2)
-            except Exception as exc:
-                print(f"[RobotDog] moq pump stopped: {exc}")
-                break
-
-    thread = threading.Thread(target=_loop, name="RobotDog-MoQPump", daemon=True)
-    thread.start()
-    return thread
 
 
 def main() -> None:
@@ -112,19 +92,12 @@ def main() -> None:
     print(f"collaborator join={collaborator.join_network(collaborator_id)}")
     write_runtime_value(session_dir, "collaborator.ready", collaborator_id)
 
-    stop_event = threading.Event()
-    pump_thread = _start_moq_pump_loop(collaborator, stop_event)
-
-    try:
-        wait_for_runtime_value(session_dir, "shutdown.signal", timeout_seconds=args.wait_timeout)
-        task_id = task_id_holder["value"] or read_runtime_value(session_dir, "task_id")
-        if task_id:
-            print(collaborator.request_terminate_task(collaborator_id, task_id, "demo finished"))
-        print(collaborator.logout_network(collaborator_id))
-        print(collaborator.deregister_robot(collaborator_id, "demo completed"))
-    finally:
-        stop_event.set()
-        pump_thread.join(timeout=1.0)
+    wait_for_runtime_value(session_dir, "shutdown.signal", timeout_seconds=args.wait_timeout)
+    task_id = task_id_holder["value"] or read_runtime_value(session_dir, "task_id")
+    if task_id:
+        print(collaborator.request_terminate_task(collaborator_id, task_id, "demo finished"))
+    print(collaborator.logout_network(collaborator_id))
+    print(collaborator.deregister_robot(collaborator_id, "demo completed"))
 
 
 if __name__ == "__main__":

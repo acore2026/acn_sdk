@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import asyncio
+import time
 import logging
+import threading
 from collections import defaultdict
 from typing import Any, Callable, Coroutine
 
@@ -28,6 +30,10 @@ class MoQClient:
         self._object_counters: dict[str, int] = defaultdict(int)
         self._connected = False
         self._loop: asyncio.AbstractEventLoop | None = None
+        self._loop_lock = threading.RLock()
+        self._loop_thread: threading.Thread | None = None
+        self._loop_ready = threading.Event()
+        self._keepalive_task: asyncio.Task[None] | None = None
 
         self._publisher: MOQPublisher | None = None
         self._subscriber: MOQSubscriber | None = None
@@ -39,47 +45,65 @@ class MoQClient:
             self.host,
             self.remote_port,
         )
-        self._loop = asyncio.new_event_loop()
-        if self.role == "publisher":
-            self._publisher = MOQPublisher(self.host, self.remote_port)
-            self._publisher.set_handlers(
-                on_connected=lambda: self._logger.info("MoQ publisher connected to relay"),
-                on_disconnected=lambda: self._logger.info("MoQ publisher disconnected from relay"),
-                on_publication_accepted=lambda track_name: self._logger.info("MoQ publication accepted track=%s", track_name),
-                on_publication_rejected=lambda track_name, reason: self._logger.warning(
-                    "MoQ publication rejected track=%s reason=%s",
-                    track_name,
-                    reason,
-                ),
-            )
-            connected = self._run_async(self._publisher.connect())
-        elif self.role == "subscriber":
-            self._subscriber = MOQSubscriber(self.host, self.remote_port)
-            self._subscriber.set_handlers(
-                on_connected=lambda: self._logger.info("MoQ subscriber connected to relay"),
-                on_disconnected=lambda: self._logger.info("MoQ subscriber disconnected from relay"),
-                on_object_received=self._handle_received_object,
-                on_subscription_accepted=lambda track_name: self._logger.info("MoQ subscription accepted track=%s", track_name),
-                on_subscription_rejected=lambda track_name, reason: self._logger.warning(
-                    "MoQ subscription rejected track=%s reason=%s",
-                    track_name,
-                    reason,
-                ),
-            )
-            connected = self._run_async(self._subscriber.connect())
-        else:
-            raise ValueError(f"Unsupported MoQ role: {self.role}")
+        try:
+            with self._loop_lock:
+                if self._loop is not None:
+                    raise RuntimeError("MoQ client is already connected.")
 
-        if not connected:
-            raise RuntimeError(f"Failed to connect MoQ {self.role} to {self.host}:{self.remote_port}")
+                self._loop_ready = threading.Event()
+                self._loop_thread = threading.Thread(
+                    target=self._run_loop,
+                    name=f"MoQClient-{self.role}-{self.host}:{self.remote_port}",
+                    daemon=True,
+                )
+                self._loop_thread.start()
 
-        self._connected = True
-        self._logger.info(
-            "MoQ client connected role=%s remote=%s:%s",
-            self.role,
-            self.host,
-            self.remote_port,
-        )
+            if not self._loop_ready.wait(timeout=5.0):
+                raise RuntimeError("MoQ event loop thread failed to start.")
+
+            if self.role == "publisher":
+                self._publisher = MOQPublisher(self.host, self.remote_port)
+                self._publisher.set_handlers(
+                    on_connected=lambda: self._logger.info("MoQ publisher connected to relay"),
+                    on_disconnected=lambda: self._logger.info("MoQ publisher disconnected from relay"),
+                    on_publication_accepted=lambda track_name: self._logger.info("MoQ publication accepted track=%s", track_name),
+                    on_publication_rejected=lambda track_name, reason: self._logger.warning(
+                        "MoQ publication rejected track=%s reason=%s",
+                        track_name,
+                        reason,
+                    ),
+                )
+                connected = self._run_async(self._publisher.connect())
+            elif self.role == "subscriber":
+                self._subscriber = MOQSubscriber(self.host, self.remote_port)
+                self._subscriber.set_handlers(
+                    on_connected=lambda: self._logger.info("MoQ subscriber connected to relay"),
+                    on_disconnected=lambda: self._logger.info("MoQ subscriber disconnected from relay"),
+                    on_object_received=self._handle_received_object,
+                    on_subscription_accepted=lambda track_name: self._logger.info("MoQ subscription accepted track=%s", track_name),
+                    on_subscription_rejected=lambda track_name, reason: self._logger.warning(
+                        "MoQ subscription rejected track=%s reason=%s",
+                        track_name,
+                        reason,
+                    ),
+                )
+                connected = self._run_async(self._subscriber.connect())
+            else:
+                raise ValueError(f"Unsupported MoQ role: {self.role}")
+
+            if not connected:
+                raise RuntimeError(f"Failed to connect MoQ {self.role} to {self.host}:{self.remote_port}")
+
+            self._connected = True
+            self._logger.info(
+                "MoQ client connected role=%s remote=%s:%s",
+                self.role,
+                self.host,
+                self.remote_port,
+            )
+        except Exception:
+            self.disconnect()
+            raise
 
     def publish(self, namespace: str, track: str) -> None:
         if self._publisher is None:
@@ -178,7 +202,7 @@ class MoQClient:
     def pump(self, duration: float = 0.1) -> None:
         if self._loop is None:
             raise RuntimeError("MoQ event loop is not initialized.")
-        self._run_async(asyncio.sleep(duration))
+        time.sleep(duration)
 
     def is_published(self, namespace: str, track: str) -> bool:
         return self._track_key(namespace, track) in self._published_tracks
@@ -193,23 +217,49 @@ class MoQClient:
             self.host,
             self.remote_port,
         )
-        if self._loop is not None:
-            self._run_async(self._shutdown_clients())
-        self._subscriptions.clear()
-        self._published_tracks.clear()
-        self._object_counters.clear()
-        self._connected = False
-        if self._loop is not None:
-            pending = asyncio.all_tasks(self._loop)
-            for task in pending:
-                task.cancel()
-            if pending:
-                self._loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
-            self._loop.run_until_complete(self._loop.shutdown_asyncgens())
-            self._loop.close()
-            self._loop = None
-        self._publisher = None
-        self._subscriber = None
+        loop: asyncio.AbstractEventLoop | None = None
+        loop_thread: threading.Thread | None = None
+        with self._loop_lock:
+            if self._loop is not None and self._loop_ready.is_set() and self._loop_thread is not None and self._loop_thread.is_alive():
+                self._run_async(self._shutdown_clients())
+            loop = self._loop
+            loop_thread = self._loop_thread
+            self._subscriptions.clear()
+            self._published_tracks.clear()
+            self._object_counters.clear()
+            self._connected = False
+            if loop is not None:
+                loop.call_soon_threadsafe(loop.stop)
+        if loop_thread is not None and loop_thread.is_alive() and loop_thread is not threading.current_thread():
+            loop_thread.join(timeout=5.0)
+        if loop is not None and loop_thread is not None and loop_thread.is_alive():
+            loop.call_soon_threadsafe(loop.stop)
+            loop_thread.join(timeout=5.0)
+        if loop_thread is not None and loop_thread.is_alive():
+            self._logger.warning("MoQ loop thread did not stop promptly; releasing references without final loop close.")
+            with self._loop_lock:
+                self._connected = False
+                self._loop = None
+                self._loop_thread = None
+                self._keepalive_task = None
+                self._publisher = None
+                self._subscriber = None
+            return
+        with self._loop_lock:
+            if self._loop is not None:
+                pending = asyncio.all_tasks(self._loop)
+                for task in pending:
+                    task.cancel()
+                if pending:
+                    self._loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
+                self._loop.run_until_complete(self._loop.shutdown_asyncgens())
+                self._loop.close()
+                self._loop = None
+            self._loop_thread = None
+            self._command_queue = None
+            self._worker_task = None
+            self._publisher = None
+            self._subscriber = None
         self._logger.info(
             "MoQ client disconnected role=%s remote=%s:%s",
             self.role,
@@ -234,7 +284,30 @@ class MoQClient:
     def _run_async(self, coroutine: Coroutine[Any, Any, object]) -> object:
         if self._loop is None:
             raise RuntimeError("MoQ event loop is not initialized.")
-        return self._loop.run_until_complete(coroutine)
+        if self._loop_thread is None or not self._loop_thread.is_alive():
+            raise RuntimeError("MoQ event loop is not running.")
+        if threading.current_thread() is self._loop_thread:
+            raise RuntimeError("Cannot call blocking MoQClient APIs from the MoQ loop thread.")
+        return asyncio.run_coroutine_threadsafe(coroutine, self._loop).result(timeout=10.0)
+
+    def _run_loop(self) -> None:
+        loop = asyncio.new_event_loop()
+        with self._loop_lock:
+            self._loop = loop
+        asyncio.set_event_loop(loop)
+        self._keepalive_task = loop.create_task(self._keepalive())
+        self._loop_ready.set()
+        try:
+            loop.run_forever()
+        finally:
+            asyncio.set_event_loop(None)
+
+    async def _keepalive(self) -> None:
+        while True:
+            try:
+                await asyncio.sleep(0.05)
+            except asyncio.CancelledError:
+                break
 
     async def _shutdown_clients(self) -> None:
         if self._publisher is not None:
@@ -274,6 +347,10 @@ class MoQClient:
                 self._subscriber._client = None
             elif hasattr(self._subscriber, "disconnect"):
                 self._subscriber.disconnect()
+        if self._keepalive_task is not None:
+            self._keepalive_task.cancel()
+            await asyncio.gather(self._keepalive_task, return_exceptions=True)
+            self._keepalive_task = None
         self._publication_tracks.clear()
         self._subscription_tracks.clear()
 
