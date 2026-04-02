@@ -205,6 +205,45 @@ def test_register_agent_attribute_with_mismatched_agent_id_raises(sdk_environmen
     assert "does not match this device" in message
 
 
+def test_register_agent_attribute_requires_http_200_to_succeed(sdk_environment: object) -> None:
+    class NonOkHttpResponse:
+        def __init__(self, status_code: int, payload: dict[str, object]) -> None:
+            self.status_code = status_code
+            self._payload = payload
+
+        def json(self) -> dict[str, object]:
+            return self._payload
+
+    class NonOkHttpSession:
+        def __init__(self) -> None:
+            self.requests: list[tuple[str, dict[str, object], dict[str, str] | None]] = []
+
+        def post(self, url: str, json: dict[str, object], headers: dict[str, str] | None = None):
+            self.requests.append((url, json, headers))
+            if url == "/arf/v1/agent-cards":
+                return NonOkHttpResponse(201, {"result": "created", "message": "accepted"})
+            return NonOkHttpResponse(200, {"result": "success"})
+
+        def close(self) -> None:
+            return None
+
+    sdk = create_sdk()
+    robot_info = RobotInfo(
+        name="AliceAgent",
+        owner="+8613800138000",
+        description="AgentModel-X, SN123456",
+        priority=5,
+        metadata={},
+    )
+    result, agent_id = sdk.register_agent_info(robot_info)
+    assert result is True
+
+    sdk.http_client._session = NonOkHttpSession()
+    result, message = sdk.register_agent_attribute(agent_id, ["pick"])
+    assert result is False
+    assert "HTTP request failed: 201" in message
+
+
 def test_deregister_with_mismatched_agent_id_raises(sdk_environment: object) -> None:
     sdk = create_sdk()
     robot_info = RobotInfo(

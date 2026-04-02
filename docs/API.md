@@ -8,6 +8,7 @@
 - 第一个元素固定为 `result`，类型为 `bool`
 - `True` 时，第二个元素为业务结果字符串，复杂结果通常用 JSON 字符串编码
 - `False` 时，第二个元素为错误信息字符串
+- 所有需要发起 HTTP 请求的对外接口，只有当 HTTP 响应状态码为 `200` 时才返回 `True`
 
 包结构：
 
@@ -113,6 +114,7 @@ POST /arf/v1/agent-cards
 - SDK 通过 `AcnAgent` 的 HTTP 入口发起请求，表面路径仍然是 `/arf/v1/agent-cards`，由 `AcnAgent` 转发到 `ARF`。
 - 原始需求中出现 `agent—cards`，其中连接符疑似排版字符；工程中统一采用标准路径 `/arf/v1/agent-cards`。
 - 调用前会校验传入的 `agent_id` 必须与本机已注册身份一致，否则直接抛出 `ValueError`
+- 只有当 HTTP 响应状态码为 `200` 时，接口才返回 `True`
 - 当前请求体包含 `agent_id`、`timestamp`、`signature`、`signature_encoding`、`vc_list`
 - `signature` 仅基于 `timestamp` 生成，编码采用 `base64`
 - `vc_list` 中第一个元素为 `vc0`，后续元素为全部能力 VC

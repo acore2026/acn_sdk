@@ -74,7 +74,7 @@ class HttpClient:
             path,
             format_json_for_log(result),
         )
-        if response.status_code >= 400:
+        if response.status_code != 200:
             raise RuntimeError(f"HTTP request failed: {response.status_code}, {result}")
         return result
 
