@@ -375,7 +375,6 @@ class AcnSDK:
                 task_id=task_id,
             )
             response = self.http_client.request_task_execution(request)
-            task_id = response.get("task_id", task_id)
             self._task_registry[task_id] = {
                 "description": task_info,
                 "status": TASK_PROCESSING,

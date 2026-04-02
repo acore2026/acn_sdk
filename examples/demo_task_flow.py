@@ -279,7 +279,7 @@ def main() -> None:
         task_id=task_id,
         topic="Location",
     )
-    time.sleep(0.2)
+    time.sleep(5)
 
     report_task_info_for_duration(
         initiator,
@@ -291,6 +291,7 @@ def main() -> None:
     )
     collaborator.request_terminate_task(collaborator_id, task_id, "demo finished")
     collaborator.logout_network(collaborator_id)
+    initiator.request_terminate_task(initiator_id, task_id, "demo finished")
     initiator.logout_network(initiator_id)
     collaborator.deregister_robot(collaborator_id, "demo completed")
     initiator.deregister_robot(initiator_id, "demo completed")
