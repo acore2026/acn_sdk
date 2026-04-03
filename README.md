@@ -163,10 +163,10 @@ python3 examples/demo_task_initiator_realtime.py
 示例导入方式：
 
 ```python
-from acn_sdk import AcnSDK, RobotInfo
+from acn_sdk import AcnSDK, AgentInfo
 
-sdk = AcnSDK(robot_name="AliceAgent")
-result, agent_id = sdk.register_agent_info(robot_info)
+sdk = AcnSDK(agent_name="AliceAgent")
+result, agent_id = sdk.register_agent_info(agent_info)
 ```
 
 `AcnSDK` 对机器人暴露的公共接口现统一返回 `Tuple`：第一个元素为 `bool` 型 `result`，后续元素为业务结果或错误信息。

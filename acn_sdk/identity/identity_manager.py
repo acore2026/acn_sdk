@@ -100,7 +100,7 @@ class IdentityManager:
             pending_capabilities.append(capability)
         return pending_capabilities
 
-    def query_robot_id(self, robot_name: str, owner: str) -> str | None:
+    def query_agent_id(self, robot_name: str, owner: str) -> str | None:
         if self.robot_name == robot_name and self.owner == owner:
             return self.agent_id
         return None

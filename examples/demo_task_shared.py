@@ -15,6 +15,7 @@ from acn_sdk.config import SDKConfig
 DEFAULT_RUNTIME_ROOT = Path(tempfile.gettempdir()) / "acn-sdk-task-demo"
 DEFAULT_SESSION_NAME = "demo-task-flow"
 DEFAULT_AGENT_GW_BASE_URL = "http://127.0.0.1:9002"
+REPO_CONFIG_PATH = Path(__file__).resolve().parent.parent / "config" / "config.yaml"
 DEFAULT_WAIT_TIMEOUT_SECONDS = 120.0
 
 
@@ -46,6 +47,17 @@ def build_config(base_dir: Path, identity_name: str) -> Path:
             "log_level": "INFO",
         }
     )
+    config_path = base_dir / identity_name / "config.yaml"
+    config.save(config_path)
+    return config_path
+
+
+def build_config_from_repo(base_dir: Path, identity_name: str, repo_config_path: Path = REPO_CONFIG_PATH) -> Path:
+    config = SDKConfig.load(repo_config_path)
+    config.storage.identity_file = str(base_dir / identity_name / "identity.json")
+    config.storage.private_key_file = str(base_dir / identity_name / "keys" / "private.pem")
+    config.storage.public_key_file = str(base_dir / identity_name / "keys" / "public.pem")
+    config.storage.log_dir = str(base_dir / identity_name / "logs")
     config_path = base_dir / identity_name / "config.yaml"
     config.save(config_path)
     return config_path

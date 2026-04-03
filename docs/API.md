@@ -22,17 +22,16 @@ acn_sdk.credential.credential_issuer.CredentialIssuer
 acn_sdk.task.task_manager.TaskManager
 ```
 
-### `AcnSDK.__init__(robot_name: str, issuer_id: str = "did:huaweiissuer@6gc.mnc015.mcc234.3gppnetwork", config_path: str | Path = "config/config.yaml")`
+### `AcnSDK.__init__(agent_name: str, config_path: str | Path = "config/config.yaml")`
 
 初始化 SDK，完成以下动作：
 
-- 保存 `robot_name`
+- 保存 `agent_name`
 - 自动加载 `config/config.yaml`
 - 初始化 `IdentityManager`、`HttpClient`、`CredentialIssuer`
 - 将 `WebSocketClient`、`moq_pub_client`、`moq_sub_client`、`TaskManager` 初值设为 `None`
 - 设置网络状态为 `OFFLINE`
 - 若本地不存在密钥，则自动生成并保存
-- `issuer_id` 目前保留为兼容参数；能力 VC 的实际发放者已改为按能力名称自动选择
 - 可通过 `config_path` 参数指定其他 YAML 配置文件；运行中修改 YAML 后可调用 `reload_config()` 重新加载
 
 ### `register_callbacks(...) -> tuple[bool, str]`
@@ -44,10 +43,9 @@ acn_sdk.task.task_manager.TaskManager
 - `on_task_collaboration_request(payload)`：收到 `TASK_REQUEST_COLLABORATION` 时触发
 - `on_discover_result_received(payload)`：收到 `DISCOVER_RESULT` 时触发，通常在回调里调用 `start_task_collaboration()`
 - `on_task_start_command(payload)`：收到 `START_TASK` 时触发
-- `on_moq_message_received(namespace, track, payload)`：收到 MOQ 订阅对象时触发
-- `on_message_received(message_type, payload)`：保留的通用回调，继续兼容旧用法
+- `on_message_received(namespace, track, payload)`：收到 MOQ 订阅对象时触发
 
-未注册对应回调时，SDK 会跳过对应处理，仅保留通用回调行为。
+未注册对应回调时，SDK 会跳过对应处理。
 
 ### `reload_config() -> tuple[bool, str]`
 
@@ -60,7 +58,7 @@ acn_sdk.task.task_manager.TaskManager
 
 如果当前已经连接了网络组件，`reload_config()` 会先断开现有连接，再按新配置重新初始化运行环境。
 
-### `register_agent_info(robot_info: RobotInfo) -> tuple[bool, str]`
+### `register_agent_info(agent_info: AgentInfo) -> tuple[bool, str]`
 
 向 `AcnAgent` 提交数字身份申请，返回 `agent_id`。
 
@@ -98,6 +96,7 @@ POST /idm/v1/identity-applications
 
 - `IdentityManager` 保存 `agent_id`、`vc0`、机器人信息
 - `signature` 仅基于 `timestamp` 生成，编码采用 `base64`
+- `AgentInfo.priority` 默认值为 `1`，`AgentInfo.metadata` 默认值为空字典
 
 ### `register_agent_attribute(agent_id: str, capability: list[str]) -> tuple[bool, str]`
 
@@ -170,11 +169,11 @@ POST /arf/v1/agent-cards
 }
 ```
 
-### `query_robot_id(robot_name: str, owner: str) -> tuple[bool, str]`
+### `query_agent_id(robot_name: str, owner: str) -> tuple[bool, str]`
 
 本地查询当前设备保存的身份信息，命中则返回 `(True, agent_id)`，未命中返回 `(False, None)`。
 
-### `deregister_robot(agent_id: str, reason: str) -> tuple[bool, str]`
+### `deregister_agent(agent_id: str, reason: str) -> tuple[bool, str]`
 
 请求去注册。只有传入的 `agent_id` 与本机一致时才允许执行。
 
@@ -219,6 +218,27 @@ POST /acn-agent/v1/agent-deletions
 - 发送 `DISCONNECTION`
 - 断开 WebSocket / MoQ / TaskManager
 - 状态切换回 `OFFLINE`
+
+### `query_network_status(agent_id: str) -> tuple[bool, str]`
+
+查询本机当前网络状态。
+
+- 仅允许传入与本机身份一致的 `agent_id`
+- 成功时返回当前 `network_status`
+
+### `query_task_status(agent_id: str, task_id: str) -> tuple[bool, str]`
+
+查询指定任务状态。
+
+- 仅允许传入与本机身份一致的 `agent_id`
+- 成功时返回任务状态字符串，例如 `Processing` 或 `Terminated`
+
+### `query_task_list(agent_id: str) -> tuple[bool, str]`
+
+查询本机任务列表。
+
+- 仅允许传入与本机身份一致的 `agent_id`
+- 成功时返回任务列表 JSON，元素包含 `task_id`、`description`、`status`、`requesting_agent_id`、`published_tracks`、`subscribed_tracks`
 
 ### `request_task_execution(agent_id: str, task_info: str, task_id: str | None = None) -> tuple[bool, str]`
 
@@ -274,11 +294,11 @@ POST /arf/v1/agent-discoveries
 
 - SDK 通过 `AcnAgent` 的 HTTP 入口发起请求，表面路径仍然是 `/arf/v1/agent-discoveries`，由 `AcnAgent` 转发到 `ARF`。
 
-### `accept_task_collaboration(agent_id: str, task_id: str, dst_agent_id: str | None = None) -> tuple[bool, str]`
+### `accept_task_collaboration(agent_id: str, task_id: str) -> tuple[bool, str]`
 
 接受协同任务，请求体通过 WebSocket 发送 `TASK_ACCEPT_COLLABORATION`。
 
-- `dst_agent_id` 为空时，SDK 会优先使用最近一次 `TASK_REQUEST_COLLABORATION` 中的 `src_agent_id`。
+- SDK 会从 `_task_registry[task_id]["requesting_agent_id"]` 读取目标智能体，即最近一次 `TASK_REQUEST_COLLABORATION` 中的 `src_agent_id`。
 
 ### `start_task_collaboration(agent_id: str, dst_agent_id: str, task_id: str, task_description: str) -> tuple[bool, str]`
 
@@ -295,11 +315,6 @@ POST /arf/v1/agent-discoveries
 - `TASK_REQUEST_COLLABORATION`：触发 `on_task_collaboration_request(payload)` 回调
 - `DISCOVER_RESULT`：触发 `on_discover_result_received(payload)` 回调
 - `START_TASK`：触发 `on_task_start_command(payload)` 回调
-- 其他消息类型：透传给初始化时注册的 `on_message_received(message_type, payload)` 回调
-
-### `connect_network() -> tuple[bool, str]`
-
-保留的轻量连接方法，只做本地网络组件初始化，不执行 WebSocket `SETUP` 握手。更推荐使用 `join_network()`。
 
 ### `disconnect_all(close_http: bool = True) -> tuple[bool, str]`
 

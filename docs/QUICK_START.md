@@ -63,9 +63,9 @@ python3 examples/demo_task_collaborator_realtime.py
 示例中的 SDK 导入路径已经切换为：
 
 ```python
-from acn_sdk import AcnSDK, RobotInfo
+from acn_sdk import AcnSDK, AgentInfo
 
-sdk = AcnSDK(robot_name="AliceAgent")
+sdk = AcnSDK(agent_name="AliceAgent")
 ```
 
 ## 5. Linux / Ubuntu 一键启动
@@ -176,7 +176,7 @@ logs/acn_sdk.log
 - `AcnSDK` 初始化时自动检查本地公钥和私钥，不存在则生成并保存 EC P-256 密钥
 - `register_agent_info` 成功后保存 `agent_id` 和 `vc0`，请求体中的 `signature` 仅基于 `timestamp` 生成，编码采用 `base64`
 - `register_agent_attribute(agent_id, capability)` 会先校验传入的 `agent_id` 与本机身份一致，再生成全部能力 VC，并以 `vc_list=[vc0, *capability_vcs]` 的格式发送到 `/arf/v1/agent-cards`，SDK 仍然通过 `AcnAgent` 的 HTTP 入口发起请求，由 `AcnAgent` 转发到 `ARF`，请求体字段顺序为 `agent_id`、`timestamp`、`signature`、`signature_encoding`、`vc_list`
-- `deregister_robot` 仅清理本地身份状态，不删除已生成的公钥和私钥，请求体中的 `signature` 仅基于 `timestamp` 生成，编码采用 `base64`
+- `deregister_agent` 仅清理本地身份状态，不删除已生成的公钥和私钥，请求体中的 `signature` 仅基于 `timestamp` 生成，编码采用 `base64`
 - `join_network` 会先通过 WebSocket 向 AgentGW 发送 `SETUP`，收到对端 `SETUP/OK` 且本地 MOQ 客户端建立后才视为入网成功
 - `demo_task_flow.py` 可以演示任务请求、服务端推送协同消息、SDK 回调通知、`SUBSCRIBE_TRACK` 处理和通过真实 MOQ relay 传输 `task_info_report`
 

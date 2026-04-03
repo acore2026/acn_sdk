@@ -10,7 +10,7 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_DIR))
 sys.path.insert(0, str(SCRIPT_DIR.parent))
 
-from acn_sdk import AcnSDK, RobotInfo
+from acn_sdk import AcnSDK, AgentInfo
 from demo_task_shared import (
     DEFAULT_RUNTIME_ROOT,
     DEFAULT_SESSION_NAME,
@@ -28,7 +28,7 @@ from demo_task_shared import (
 )
 
 
-def on_moq_message_received(agent_name: str, namespace: str, track: str, payload: bytes) -> None:
+def on_message_received(agent_name: str, namespace: str, track: str, payload: bytes) -> None:
     print(f"[{agent_name}] moq_message namespace={namespace} track={track} payload={payload!r}")
 
 
@@ -48,12 +48,12 @@ def main() -> None:
 
     initiator_config = build_config(session_dir, identity_name="initiator")
     initiator = AcnSDK(
-        robot_name="AliceAgent",
+        agent_name="AliceAgent",
         config_path=initiator_config,
     )
 
     initiator_ok, initiator_id = initiator.register_agent_info(
-        RobotInfo(
+        AgentInfo(
             name="AliceAgent",
             owner="13800138000",
             description="AgentModel-X, SN123456",
@@ -91,7 +91,7 @@ def main() -> None:
 
     initiator.register_callbacks(
         on_discover_result_received=initiator_on_discover_result_received,
-        on_moq_message_received=lambda namespace, track, payload: on_moq_message_received(
+        on_message_received=lambda namespace, track, payload: on_message_received(
             "AliceAgent", namespace, track, payload
         ),
     )
@@ -160,7 +160,7 @@ def main() -> None:
     try:
         print(initiator.request_terminate_task(initiator_id, task_id, "demo finished"))
         print(initiator.logout_network(initiator_id))
-        print(initiator.deregister_robot(initiator_id, "demo completed"))
+        print(initiator.deregister_agent(initiator_id, "demo completed"))
     finally:
         write_runtime_value(session_dir, "shutdown.signal", "done")
 

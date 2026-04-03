@@ -13,7 +13,7 @@ AcnSDKÊÇÔËĞĞÔÚ»úÆ÷ÈË¶Ë²à£¬ÓÃÓÚÓëºËĞÄÍø²àAcnAgentºÍAgentGWÍ¨ĞÅµÄ×é¼ş¡£ĞèÒª°üÀ¨ÒÔÏ
 ## Ö÷ÒªÁ÷³Ì
 Ê×ÏÈÊµÏÖÉí·İ¹ÜÀíµÄ¹¦ÄÜ
 1. »úÆ÷ÈË´´½¨AcnSDKÊµÀı£¬±£´ærobot_name£¬IdentityManager¡¢HttpClient¡¢CredentialIssuerÊµÀı£»¶¨ÒåWebSocketClient¡¢MoQClient¡¢TaskManager±äÁ¿£¬³õÊ¼ÖµÎªNone£»ÍøÂç×´Ì¬ÎªÄ¬ÈÏÖµ"OFFLINE"£»Èô±¾µØ²»´æÔÚÎÄ¼ş£¬Éú³É¹«Ô¿Ë½Ô¿²¢±£´æ£»
-2. »úÆ÷ÈËµ÷ÓÃAcnSDKµÄregister_agent_infoÀ´ÉêÇëÊı×ÖÉí·İ£¬ÊäÈë²ÎÊıÎªRobotInfo£¬°üÀ¨name£¬owner£¨µç»°ºÅÂë¸ñÊ½£©£¬description£¬priority£¬ÒÔ¼°¸½¼ÓĞÅÏ¢metadata¡£AcnSDKµ÷ÓÃhttpClientµÄregister_agent_infoº¯Êı¸øAcnAgent·¢ËÍPOSTÇëÇó£¨/idm/v1/identity-applications£©£¬ÊÕµ½ÏìÓ¦ºó£¬½â³öagent_idºÍvc0±£´æµ½IdentityManagerÄÚ£¬²¢Ïò»úÆ÷ÈË·µ»Øagent_id;
+2. »úÆ÷ÈËµ÷ÓÃAcnSDKµÄregister_agent_infoÀ´ÉêÇëÊı×ÖÉí·İ£¬ÊäÈë²ÎÊıÎªAgentInfo£¬°üÀ¨name£¬owner£¨µç»°ºÅÂë¸ñÊ½£©£¬description£¬priority£¬ÒÔ¼°¸½¼ÓĞÅÏ¢metadata¡£AcnSDKµ÷ÓÃhttpClientµÄregister_agent_infoº¯Êı¸øAcnAgent·¢ËÍPOSTÇëÇó£¨/idm/v1/identity-applications£©£¬ÊÕµ½ÏìÓ¦ºó£¬½â³öagent_idºÍvc0±£´æµ½IdentityManagerÄÚ£¬²¢Ïò»úÆ÷ÈË·µ»Øagent_id;
 POSTÇëÇó¸ñÊ½Îª£º
 {
     "method": "POST",
@@ -117,8 +117,8 @@ POST¸ñÊ½²Î¿¼£º
     }
 }
 ÆäÖĞ vc_list°üÀ¨vc0ºÍËùÓĞµÄÄÜÁ¦vc
-4. Ìá¹©²éÑ¯Êı×ÖÉí·İµÄ½Ó¿Úquery_robot_id£¬ÊäÈë²ÎÊıÎªrobot_nameºÍowner£¬·µ»Øagent_id
-5. Ìá¹©È¥×¢²áµÄ½Ó¿Úderegister_robot£¬ÊäÈë²ÎÊıÎªagent_idºÍreason¡£AcnSDKÈ·ÈÏagent_idÊÇ·ñÓë±¾Éè±¸Ò»ÖÂºó£¬×é×°payload_basic_info£¨agent_id, reason£©;µ÷ÓÃhttpClientÏòACN Agent·¢ËÍPOSTÏûÏ¢ÇëÇó£¨/acn-agent/v1/agent-deletions£©£¬×é×°body£¬ÓÃË½Ô¿¸øÊ±¼ä´Á¼ÓÃÜ£»ÊÕµ½ÏìÓ¦ºó£¬µ÷ÓÃclearº¯Êı£¬É¾³ıagent_id, vc0, ÄÜÁ¦vc£¨IdentityManagerÌá¹©clear½Ó¿Ú£©£¬¶Ï¿ªËùÓĞÍøÂçÁ¬½Ó£¨http£¬websocket£¬moq£©£¬²¢½áÊøËùÓĞÈÎÎñ
+4. Ìá¹©²éÑ¯Êı×ÖÉí·İµÄ½Ó¿Úquery_agent_id£¬ÊäÈë²ÎÊıÎªrobot_nameºÍowner£¬·µ»Øagent_id
+5. Ìá¹©È¥×¢²áµÄ½Ó¿Úderegister_agent£¬ÊäÈë²ÎÊıÎªagent_idºÍreason¡£AcnSDKÈ·ÈÏagent_idÊÇ·ñÓë±¾Éè±¸Ò»ÖÂºó£¬×é×°payload_basic_info£¨agent_id, reason£©;µ÷ÓÃhttpClientÏòACN Agent·¢ËÍPOSTÏûÏ¢ÇëÇó£¨/acn-agent/v1/agent-deletions£©£¬×é×°body£¬ÓÃË½Ô¿¸øÊ±¼ä´Á¼ÓÃÜ£»ÊÕµ½ÏìÓ¦ºó£¬µ÷ÓÃclearº¯Êı£¬É¾³ıagent_id, vc0, ÄÜÁ¦vc£¨IdentityManagerÌá¹©clear½Ó¿Ú£©£¬¶Ï¿ªËùÓĞÍøÂçÁ¬½Ó£¨http£¬websocket£¬moq£©£¬²¢½áÊøËùÓĞÈÎÎñ
 POSTÇëÇó¸ñÊ½Îª£º
 {
     "method": "POST",

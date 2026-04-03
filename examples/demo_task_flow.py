@@ -11,11 +11,11 @@ import httpx
 
 sys.path.append("..")
 
-from acn_sdk import AcnSDK, RobotInfo
+from acn_sdk import AcnSDK, AgentInfo
 from acn_sdk.config import SDKConfig
 
 
-def on_moq_message_received(agent_name: str, namespace: str, track: str, payload: bytes) -> None:
+def on_message_received(agent_name: str, namespace: str, track: str, payload: bytes) -> None:
     print(f"[{agent_name}] moq_message namespace={namespace} track={track} payload={payload!r}")
 
 
@@ -159,16 +159,16 @@ def main() -> None:
     collaborator_config = build_config(base_dir, identity_name="collaborator")
 
     initiator = AcnSDK(
-        robot_name="AliceAgent",
+        agent_name="AliceAgent",
         config_path=initiator_config,
     )
     collaborator = AcnSDK(
-        robot_name="RobotDog",
+        agent_name="RobotDog",
         config_path=collaborator_config,
     )
 
     initiator_ok, initiator_id = initiator.register_agent_info(
-        RobotInfo(
+        AgentInfo(
             name="AliceAgent",
             owner="13800138000",
             description="AgentModel-X, SN123456",
@@ -177,7 +177,7 @@ def main() -> None:
         )
     )
     collaborator_ok, collaborator_id = collaborator.register_agent_info(
-        RobotInfo(
+        AgentInfo(
             name="RobotDog",
             owner="13800138111",
             description="RobotDogModel, SN654321",
@@ -206,7 +206,7 @@ def main() -> None:
 
     def collaborator_on_task_collaboration_request(payload: dict) -> None:
         print(f"[RobotDog] on_task_collaboration_request payload={payload}")
-        collaborator.accept_task_collaboration(collaborator_id, task_id, payload["src_agent_id"])
+        collaborator.accept_task_collaboration(collaborator_id, task_id)
 
     def collaborator_on_task_start_command(payload: dict) -> None:
         print(f"[RobotDog] on_task_start_command payload={payload}")
@@ -218,14 +218,14 @@ def main() -> None:
 
     initiator.register_callbacks(
         on_discover_result_received=initiator_on_discover_result_received,
-        on_moq_message_received=lambda namespace, track, payload: on_moq_message_received(
+        on_message_received=lambda namespace, track, payload: on_message_received(
             "AliceAgent", namespace, track, payload
         ),
     )
     collaborator.register_callbacks(
         on_task_collaboration_request=collaborator_on_task_collaboration_request,
         on_task_start_command=collaborator_on_task_start_command,
-        on_moq_message_received=lambda namespace, track, payload: on_moq_message_received(
+        on_message_received=lambda namespace, track, payload: on_message_received(
             "RobotDog", namespace, track, payload
         ),
     )
@@ -293,8 +293,8 @@ def main() -> None:
     collaborator.logout_network(collaborator_id)
     initiator.request_terminate_task(initiator_id, task_id, "demo finished")
     initiator.logout_network(initiator_id)
-    collaborator.deregister_robot(collaborator_id, "demo completed")
-    initiator.deregister_robot(initiator_id, "demo completed")
+    collaborator.deregister_agent(collaborator_id, "demo completed")
+    initiator.deregister_agent(initiator_id, "demo completed")
 
 
 if __name__ == "__main__":

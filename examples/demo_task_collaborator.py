@@ -8,7 +8,7 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_DIR))
 sys.path.insert(0, str(SCRIPT_DIR.parent))
 
-from acn_sdk import AcnSDK, RobotInfo
+from acn_sdk import AcnSDK, AgentInfo
 from demo_task_shared import (
     DEFAULT_RUNTIME_ROOT,
     DEFAULT_SESSION_NAME,
@@ -20,7 +20,7 @@ from demo_task_shared import (
 )
 
 
-def on_moq_message_received(agent_name: str, namespace: str, track: str, payload: bytes) -> None:
+def on_message_received(agent_name: str, namespace: str, track: str, payload: bytes) -> None:
     print(f"[{agent_name}] moq_message namespace={namespace} track={track} payload={payload!r}")
 
 
@@ -42,12 +42,12 @@ def main() -> None:
 
     collaborator_config = build_config(session_dir, identity_name="collaborator")
     collaborator = AcnSDK(
-        robot_name="RobotDog",
+        agent_name="RobotDog",
         config_path=collaborator_config,
     )
 
     collaborator_ok, collaborator_id = collaborator.register_agent_info(
-        RobotInfo(
+        AgentInfo(
             name="RobotDog",
             owner="13800138111",
             description="RobotDogModel, SN654321",
@@ -67,7 +67,7 @@ def main() -> None:
         task_id = payload["task_id"]
         task_id_holder["value"] = task_id
         write_runtime_value(session_dir, "task_id", task_id)
-        collaborator.accept_task_collaboration(collaborator_id, task_id, payload["src_agent_id"])
+        collaborator.accept_task_collaboration(collaborator_id, task_id)
 
     def collaborator_on_task_start_command(payload: dict) -> None:
         print(f"[RobotDog] on_task_start_command payload={payload}")
@@ -83,7 +83,7 @@ def main() -> None:
     collaborator.register_callbacks(
         on_task_collaboration_request=collaborator_on_task_collaboration_request,
         on_task_start_command=collaborator_on_task_start_command,
-        on_moq_message_received=lambda namespace, track, payload: on_moq_message_received(
+        on_message_received=lambda namespace, track, payload: on_message_received(
             "RobotDog", namespace, track, payload
         ),
     )
@@ -97,7 +97,7 @@ def main() -> None:
     if task_id:
         print(collaborator.request_terminate_task(collaborator_id, task_id, "demo finished"))
     print(collaborator.logout_network(collaborator_id))
-    print(collaborator.deregister_robot(collaborator_id, "demo completed"))
+    print(collaborator.deregister_agent(collaborator_id, "demo completed"))
 
 
 if __name__ == "__main__":

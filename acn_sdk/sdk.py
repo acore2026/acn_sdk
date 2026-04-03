@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from .config import SDKConfig
-from .credential.credential_issuer import CredentialIssuer, HUAWEI_ISSUER_DID
+from .credential.credential_issuer import CredentialIssuer
 from .crypto import ensure_ec_keypair, load_public_key_pem, sign_timestamp
 from .identity.identity_manager import IdentityManager
 from .logging_config import setup_logging
@@ -19,7 +19,7 @@ from .models import (
     AgentCardRequest,
     AgentDiscoveryRequest,
     DeregisterRequest,
-    RobotInfo,
+    AgentInfo,
     TaskExecutionRequest,
     TaskTerminationRequest,
     WebSocketMessage,
@@ -39,24 +39,16 @@ TASK_TERMINATED = "Terminated"
 class AcnSDK:
     def __init__(
         self,
-        robot_name: str,
-        issuer_id: str = HUAWEI_ISSUER_DID,
+        agent_name: str,
         config_path: str | Path | None = None,
-        on_message_received: Any | None = None,
-        on_task_collaboration_request: Any | None = None,
-        on_discover_result_received: Any | None = None,
-        on_task_start_command: Any | None = None,
-        on_moq_message_received: Any | None = None,
     ) -> None:
         self.config_path = Path(config_path).expanduser().resolve() if config_path is not None else DEFAULT_CONFIG_PATH
         self.config = SDKConfig.load(self.config_path)
-        self.robot_name = robot_name
-        self.issuer_id = issuer_id
-        self.on_message_received = on_message_received
-        self.on_task_collaboration_request = on_task_collaboration_request
-        self.on_discover_result_received = on_discover_result_received
-        self.on_task_start_command = on_task_start_command
-        self.on_moq_message_received = on_moq_message_received
+        self.robot_name = agent_name
+        self.on_task_collaboration_request = None
+        self.on_discover_result_received = None
+        self.on_task_start_command = None
+        self.on_message_received = None
         self.credential_issuer = CredentialIssuer()
         self.http_client: HttpClient | None = None
         self.websocket_client: WebSocketClient | None = None
@@ -72,7 +64,7 @@ class AcnSDK:
         self._network_listener_thread: threading.Thread | None = None
 
         self._apply_config()
-        self._logger.info("AcnSDK initialized for robot=%s, network_status=%s", robot_name, self.network_status)
+        self._logger.info("AcnSDK initialized for agent=%s, network_status=%s", agent_name, self.network_status)
         self._logger.info(
             "SDK network endpoints acn_agent=%s ws=%s moq=%s web_ui=%s",
             self.config.network.acn_agent_port,
@@ -84,23 +76,20 @@ class AcnSDK:
     def register_callbacks(
         self,
         *,
-        on_message_received: Any | None = None,
         on_task_collaboration_request: Any | None = None,
         on_discover_result_received: Any | None = None,
         on_task_start_command: Any | None = None,
-        on_moq_message_received: Any | None = None,
+        on_message_received: Any | None = None,
     ) -> tuple[bool, str]:
         try:
-            if on_message_received is not None:
-                self.on_message_received = on_message_received
             if on_task_collaboration_request is not None:
                 self.on_task_collaboration_request = on_task_collaboration_request
             if on_discover_result_received is not None:
                 self.on_discover_result_received = on_discover_result_received
             if on_task_start_command is not None:
                 self.on_task_start_command = on_task_start_command
-            if on_moq_message_received is not None:
-                self.on_moq_message_received = on_moq_message_received
+            if on_message_received is not None:
+                self.on_message_received = on_message_received
             return (True, "OK")
         except Exception as exc:
             self._logger.exception("Failed to register callbacks.")
@@ -127,16 +116,16 @@ class AcnSDK:
             self._logger.exception("Failed to reload configuration from %s.", self.config_path)
             return (False, str(exc))
 
-    def register_agent_info(self, robot_info: RobotInfo) -> tuple[bool, str]:
+    def register_agent_info(self, agent_info: AgentInfo) -> tuple[bool, str]:
         try:
             timestamp = self._utc_timestamp()
             payload = {
-                "owner": robot_info.owner,
-                "name": robot_info.name,
+                "owner": agent_info.owner,
+                "name": agent_info.name,
                 "public_key": load_public_key_pem(self.config.storage.public_key_file),
-                "description": robot_info.description,
+                "description": agent_info.description,
                 "timestamp": timestamp,
-                "metadata": robot_info.metadata,
+                "metadata": agent_info.metadata,
             }
             payload["signature"] = sign_timestamp(self.config.storage.private_key_file, timestamp)
             payload["signature_encoding"] = "base64"
@@ -156,15 +145,15 @@ class AcnSDK:
             self.identity_manager.set_identity(
                 agent_id=agent_id,
                 vc0=vc0,
-                robot_name=robot_info.name,
-                owner=robot_info.owner,
-                priority=robot_info.priority,
-                metadata=robot_info.metadata,
+                robot_name=agent_info.name,
+                owner=agent_info.owner,
+                priority=agent_info.priority,
+                metadata=agent_info.metadata,
             )
-            self._logger.info("Robot registered. agent_id=%s response=\n%s", agent_id, format_json_for_log(response))
+            self._logger.info("Agent registered. agent_id=%s response=\n%s", agent_id, format_json_for_log(response))
             return (True, agent_id)
         except Exception as exc:
-            self._logger.exception("Failed to register robot info for robot=%s.", robot_info.name)
+            self._logger.exception("Failed to register agent info for agent=%s.", agent_info.name)
             return (False, str(exc))
 
     def register_agent_attribute(self, agent_id: str, capability: list[str] | str) -> tuple[bool, str]:
@@ -214,9 +203,9 @@ class AcnSDK:
             self._logger.exception("Failed to register robot attribute for agent_id=%s.", agent_id)
             return (False, str(exc))
 
-    def query_robot_id(self, robot_name: str, owner: str) -> tuple[bool, str]:
+    def query_agent_id(self, robot_name: str, owner: str) -> tuple[bool, str]:
         try:
-            agent_id = self.identity_manager.query_robot_id(robot_name, owner)
+            agent_id = self.identity_manager.query_agent_id(robot_name, owner)
             self._logger.info(
                 "Queried robot identity robot_name=%s owner=%s result=%s",
                 robot_name,
@@ -228,7 +217,7 @@ class AcnSDK:
             self._logger.exception("Failed to query robot identity robot_name=%s owner=%s.", robot_name, owner)
             return (False, str(exc))
 
-    def deregister_robot(self, agent_id: str, reason: str) -> tuple[bool, str]:
+    def deregister_agent(self, agent_id: str, reason: str) -> tuple[bool, str]:
         try:
             if self.identity_manager.agent_id != agent_id:
                 raise ValueError("The supplied agent_id does not match this device.")
@@ -251,7 +240,7 @@ class AcnSDK:
                 abstract="Deregister agent",
                 content=request.model_dump(mode="json"),
             )
-            response = self.http_client.deregister_robot(request)
+            response = self.http_client.deregister_agent(request)
 
             if self.network_status == NETWORK_ONLINE and self.websocket_client is not None:
                 disconnection_message = self._build_ws_message(
@@ -352,6 +341,37 @@ class AcnSDK:
             return (True, agent_id)
         except Exception as exc:
             self._logger.exception("Failed to logout network for agent_id=%s.", agent_id)
+            return (False, str(exc))
+
+    def query_network_status(self, agent_id: str) -> tuple[bool, str]:
+        try:
+            self._require_local_agent(agent_id)
+            return (True, self.network_status)
+        except Exception as exc:
+            self._logger.exception("Failed to query network status for agent_id=%s.", agent_id)
+            return (False, str(exc))
+
+    def query_task_status(self, agent_id: str, task_id: str) -> tuple[bool, str]:
+        try:
+            self._require_local_agent(agent_id)
+            task_entry = self._task_registry.get(task_id)
+            if not isinstance(task_entry, dict):
+                raise KeyError(f"Task {task_id} is not found.")
+            status = task_entry.get("status")
+            if not isinstance(status, str) or not status:
+                raise RuntimeError(f"Task {task_id} has no valid status.")
+            return (True, status)
+        except Exception as exc:
+            self._logger.exception("Failed to query task status for agent_id=%s task_id=%s.", agent_id, task_id)
+            return (False, str(exc))
+
+    def query_task_list(self, agent_id: str) -> tuple[bool, str]:
+        try:
+            self._require_local_agent(agent_id)
+            task_list = [self._summarize_task_entry(task_id, task_entry) for task_id, task_entry in self._task_registry.items()]
+            return (True, self._stringify_result(task_list))
+        except Exception as exc:
+            self._logger.exception("Failed to query task list for agent_id=%s.", agent_id)
             return (False, str(exc))
 
     def request_task_execution(self, agent_id: str, task_info: str, task_id: str | None = None) -> tuple[bool, str]:
@@ -535,17 +555,15 @@ class AcnSDK:
         self,
         agent_id: str,
         task_id: str,
-        dst_agent_id: str | None = None,
     ) -> tuple[bool, str]:
         try:
             self._require_online_agent(agent_id)
             if self.websocket_client is None:
                 raise RuntimeError("WebSocket is not connected.")
-            if dst_agent_id is None:
-                task_context = self._task_registry.get(task_id, {})
-                dst_agent_id = task_context.get("requesting_agent_id")
+            task_context = self._task_registry.get(task_id, {})
+            dst_agent_id = task_context.get("requesting_agent_id")
             if not dst_agent_id:
-                raise ValueError(f"dst_agent_id must be provided for task_id={task_id}.")
+                raise ValueError(f"requesting_agent_id is not available for task_id={task_id}.")
             message = self._build_ws_message(
                 "TASK_ACCEPT_COLLABORATION",
                 {
@@ -642,24 +660,9 @@ class AcnSDK:
             elif message_type == "START_TASK":
                 self._dispatch_message_callback("on_task_start_command", self.on_task_start_command, payload)
 
-            if self.on_message_received is not None:
-                self.on_message_received(message_type, payload)
             return (True, self._stringify_result(parsed_message))
         except Exception as exc:
             self._logger.exception("Failed to handle network message.")
-            return (False, str(exc))
-
-    def connect_network(self) -> tuple[bool, str]:
-        try:
-            self.websocket_client = self._create_websocket_client()
-            self.moq_pub_client = self._create_moq_client("publisher")
-            self.moq_sub_client = self._create_moq_client("subscriber")
-            self.task_manager = TaskManager()
-            self.network_status = NETWORK_ONLINE
-            self._logger.info("Network components initialized without handshake. network_status=%s", self.network_status)
-            return (True, NETWORK_ONLINE)
-        except Exception as exc:
-            self._logger.exception("Failed to initialize network components.")
             return (False, str(exc))
 
     def disconnect_all(self, close_http: bool = True, clear_task_registry: bool = False) -> tuple[bool, str]:
@@ -771,15 +774,8 @@ class AcnSDK:
         )
 
     def _handle_moq_object_received(self, namespace: str, track: str, payload: bytes) -> None:
-        moq_message = {
-            "namespace": namespace,
-            "track": track,
-            "message_info": payload,
-        }
-        if self.on_moq_message_received is not None:
-            self.on_moq_message_received(namespace, track, payload)
         if self.on_message_received is not None:
-            self.on_message_received("MOQ_OBJECT", moq_message)
+            self.on_message_received(namespace, track, payload)
 
     def _start_network_listener(self) -> None:
         if self.websocket_client is None:
@@ -913,6 +909,19 @@ class AcnSDK:
         subscribed_tracks = task_entry.setdefault("subscribed_tracks", set())
         if isinstance(subscribed_tracks, set):
             subscribed_tracks.add(track_key)
+
+    @staticmethod
+    def _summarize_task_entry(task_id: str, task_entry: dict[str, Any]) -> dict[str, Any]:
+        published_tracks = task_entry.get("published_tracks", set())
+        subscribed_tracks = task_entry.get("subscribed_tracks", set())
+        return {
+            "task_id": task_id,
+            "description": task_entry.get("description"),
+            "status": task_entry.get("status"),
+            "requesting_agent_id": task_entry.get("requesting_agent_id"),
+            "published_tracks": sorted(published_tracks) if isinstance(published_tracks, set) else [],
+            "subscribed_tracks": sorted(subscribed_tracks) if isinstance(subscribed_tracks, set) else [],
+        }
 
     @staticmethod
     def _split_track_key(track_key: str) -> tuple[str, str]:

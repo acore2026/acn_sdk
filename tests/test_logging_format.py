@@ -85,7 +85,7 @@ def test_websocket_client_logs_pretty_json_for_send_and_receive(caplog, monkeypa
 
 
 def test_sdk_logs_pretty_json_for_received_ws_message(caplog, sdk_environment) -> None:
-    sdk = AcnSDK(robot_name="AliceAgent")
+    sdk = AcnSDK(agent_name="AliceAgent")
     caplog.set_level("INFO")
 
     sdk.handle_network_message(

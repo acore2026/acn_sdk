@@ -45,7 +45,7 @@ class HttpClient:
     def register_agent_attribute(self, payload: AgentCardRequest) -> dict[str, Any]:
         return self._post("/arf/v1/agent-cards", payload.model_dump(mode="json"))
 
-    def deregister_robot(self, payload: DeregisterRequest) -> dict[str, Any]:
+    def deregister_agent(self, payload: DeregisterRequest) -> dict[str, Any]:
         return self._post("/acn-agent/v1/agent-deletions", payload.model_dump(mode="json"))
 
     def request_task_execution(self, payload: TaskExecutionRequest) -> dict[str, Any]:

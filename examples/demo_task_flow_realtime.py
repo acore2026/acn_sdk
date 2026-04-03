@@ -13,11 +13,11 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_DIR))
 sys.path.insert(0, str(SCRIPT_DIR.parent))
 
-from acn_sdk import AcnSDK, RobotInfo
-from demo_task_shared import build_config, current_location_bytes, report_task_info_for_duration
+from acn_sdk import AcnSDK, AgentInfo
+from demo_task_shared import build_config_from_repo, current_location_bytes, report_task_info_for_duration
 
 
-def on_moq_message_received(agent_name: str, namespace: str, track: str, payload: bytes) -> None:
+def on_message_received(agent_name: str, namespace: str, track: str, payload: bytes) -> None:
     print(f"[{agent_name}] moq_message namespace={namespace} track={track} payload={payload!r}")
 
 
@@ -40,20 +40,20 @@ def main() -> None:
     base_dir.mkdir(parents=True, exist_ok=True)
     print(f"demo_runtime_dir={base_dir}")
 
-    initiator_config = build_config(base_dir, identity_name="initiator")
-    collaborator_config = build_config(base_dir, identity_name="collaborator")
+    initiator_config = build_config_from_repo(base_dir, identity_name="initiator")
+    collaborator_config = build_config_from_repo(base_dir, identity_name="collaborator")
 
     initiator = AcnSDK(
-        robot_name="AliceAgent",
+        agent_name="AliceAgent",
         config_path=initiator_config,
     )
     collaborator = AcnSDK(
-        robot_name="RobotDog",
+        agent_name="RobotDog",
         config_path=collaborator_config,
     )
 
     initiator_ok, initiator_id = initiator.register_agent_info(
-        RobotInfo(
+        AgentInfo(
             name="AliceAgent",
             owner="13800138000",
             description="AgentModel-X, SN123456",
@@ -62,7 +62,7 @@ def main() -> None:
         )
     )
     collaborator_ok, collaborator_id = collaborator.register_agent_info(
-        RobotInfo(
+        AgentInfo(
             name="RobotDog",
             owner="13800138111",
             description="RobotDogModel, SN654321",
@@ -81,7 +81,6 @@ def main() -> None:
     collaboration_request_received = threading.Event()
     discover_result_received = threading.Event()
     task_start_received = threading.Event()
-    subscribe_track_received = threading.Event()
 
     def initiator_on_discover_result_received(payload: dict) -> None:
         print(f"[AliceAgent] on_discover_result_received payload={payload}")
@@ -103,7 +102,7 @@ def main() -> None:
         print(f"[RobotDog] on_task_collaboration_request payload={payload}")
         task_id = payload["task_id"]
         task_id_holder["value"] = task_id
-        collaborator.accept_task_collaboration(collaborator_id, task_id, payload["src_agent_id"])
+        collaborator.accept_task_collaboration(collaborator_id, task_id)
         collaboration_request_received.set()
 
     def collaborator_on_task_start_command(payload: dict) -> None:
@@ -117,21 +116,17 @@ def main() -> None:
         )
         task_start_received.set()
 
-    def collaborator_on_message_received(message_type: str, payload: dict) -> None:
-        if message_type == "SUBSCRIBE_TRACK":
-            subscribe_track_received.set()
-
     initiator.register_callbacks(
         on_discover_result_received=initiator_on_discover_result_received,
-        on_moq_message_received=lambda namespace, track, payload: on_moq_message_received(
+        on_message_received=lambda namespace, track, payload: on_message_received(
             "AliceAgent", namespace, track, payload
         ),
     )
     collaborator.register_callbacks(
         on_task_collaboration_request=collaborator_on_task_collaboration_request,
         on_task_start_command=collaborator_on_task_start_command,
-        on_message_received=collaborator_on_message_received,
-        on_moq_message_received=lambda namespace, track, payload: on_moq_message_received(
+        
+        on_message_received=lambda namespace, track, payload: on_message_received(
             "RobotDog", namespace, track, payload
         ),
     )
@@ -162,7 +157,6 @@ def main() -> None:
     _wait_event(collaboration_request_received, args.wait_timeout, "TASK_REQUEST_COLLABORATION")
     _wait_event(discover_result_received, args.wait_timeout, "DISCOVER_RESULT")
     _wait_event(task_start_received, args.wait_timeout, "START_TASK")
-    _wait_event(subscribe_track_received, args.wait_timeout, "SUBSCRIBE_TRACK")
 
     report_task_info_for_duration(
         initiator,
@@ -176,8 +170,8 @@ def main() -> None:
     collaborator.logout_network(collaborator_id)
     initiator.request_terminate_task(initiator_id, task_id, "demo finished")
     initiator.logout_network(initiator_id)
-    collaborator.deregister_robot(collaborator_id, "demo completed")
-    initiator.deregister_robot(initiator_id, "demo completed")
+    collaborator.deregister_agent(collaborator_id, "demo completed")
+    initiator.deregister_agent(initiator_id, "demo completed")
 
 
 if __name__ == "__main__":

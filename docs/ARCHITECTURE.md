@@ -47,7 +47,7 @@ sequenceDiagram
     participant Relay as Mock MOQ Relay
     participant Issuer as CredentialIssuer
 
-    Robot->>SDK: register_agent_info(RobotInfo)
+    Robot->>SDK: register_agent_info(AgentInfo)
     SDK->>SDK: 生成 timestamp / signature
     SDK->>HTTP: POST /idm/v1/identity-applications
     HTTP->>Agent: 发送身份申请
@@ -86,7 +86,7 @@ sequenceDiagram
     SDK->>Relay: MOQ publish / send_object
     Relay-->>SDK: MOQ object forwarding
 
-    Robot->>SDK: deregister_robot(agent_id, reason)
+    Robot->>SDK: deregister_agent(agent_id, reason)
     SDK->>HTTP: POST /acn-agent/v1/agent-deletions
     HTTP->>Agent: 去注册
     Agent-->>HTTP: success

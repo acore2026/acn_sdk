@@ -1,4 +1,4 @@
 from .sdk import AcnSDK
-from .models import RobotInfo
+from .models import AgentInfo
 
-__all__ = ["AcnSDK", "RobotInfo"]
+__all__ = ["AcnSDK", "AgentInfo"]

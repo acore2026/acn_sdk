@@ -2,13 +2,13 @@
 from __future__ import annotations
 import sys
 sys.path.append('..')
-from acn_sdk import AcnSDK, RobotInfo
+from acn_sdk import AcnSDK, AgentInfo
 
 
 def main() -> None:
-    sdk = AcnSDK(robot_name="AliceAgent")
+    sdk = AcnSDK(agent_name="AliceAgent")
 
-    robot_info = RobotInfo(
+    agent_info = AgentInfo(
         name="AliceAgent",
         owner="13800138000",
         description="AgentModel-X, SN123456",
@@ -16,7 +16,7 @@ def main() -> None:
         metadata={"region": "CN", "os": "Linux", "version": "1.0.0"},
     )
 
-    result, agent_id = sdk.register_agent_info(robot_info)
+    result, agent_id = sdk.register_agent_info(agent_info)
     if not result:
         raise RuntimeError(agent_id)
     print(f"registered agent_id={agent_id}")
@@ -31,10 +31,10 @@ def main() -> None:
         raise RuntimeError(capability_response)
     print(f"second capability registration response={capability_response}")
 
-    result, query_result = sdk.query_robot_id("AliceAgent", "13800138000")
+    result, query_result = sdk.query_agent_id("AliceAgent", "13800138000")
     print(f"query result={query_result}")
 
-    result, deregister_response = sdk.deregister_robot(agent_id, "retired")
+    result, deregister_response = sdk.deregister_agent(agent_id, "retired")
     if not result:
         raise RuntimeError(deregister_response)
     print(f"deregister response={deregister_response}")
