@@ -357,10 +357,8 @@ class AcnSDK:
             task_entry = self._task_registry.get(task_id)
             if not isinstance(task_entry, dict):
                 raise KeyError(f"Task {task_id} is not found.")
-            status = task_entry.get("status")
-            if not isinstance(status, str) or not status:
-                raise RuntimeError(f"Task {task_id} has no valid status.")
-            return (True, status)
+            task_detail = self._summarize_task_entry(task_id, task_entry)
+            return (True, self._stringify_result(task_detail))
         except Exception as exc:
             self._logger.exception("Failed to query task status for agent_id=%s task_id=%s.", agent_id, task_id)
             return (False, str(exc))

@@ -633,7 +633,15 @@ def test_query_task_status_and_list(sdk_environment: object) -> None:
 
     result, status = sdk.query_task_status(agent_id, task_id)
     assert result is True
-    assert status == "Processing"
+    status_data = _decode_json_result(status)
+    assert status_data == {
+        "task_id": task_id,
+        "description": "query status task",
+        "status": "Processing",
+        "requesting_agent_id": None,
+        "published_tracks": [],
+        "subscribed_tracks": [],
+    }
 
     result, task_list = sdk.query_task_list(agent_id)
     assert result is True
@@ -655,7 +663,15 @@ def test_query_task_status_and_list(sdk_environment: object) -> None:
 
     result, status = sdk.query_task_status(agent_id, task_id)
     assert result is True
-    assert status == "Terminated"
+    status_data = _decode_json_result(status)
+    assert status_data == {
+        "task_id": task_id,
+        "description": "query status task",
+        "status": "Terminated",
+        "requesting_agent_id": None,
+        "published_tracks": [],
+        "subscribed_tracks": [],
+    }
 
 
 def test_join_network_starts_background_listener_for_subscribe_track(sdk_environment: object) -> None:

@@ -231,7 +231,7 @@ POST /acn-agent/v1/agent-deletions
 查询指定任务状态。
 
 - 仅允许传入与本机身份一致的 `agent_id`
-- 成功时返回任务状态字符串，例如 `Processing` 或 `Terminated`
+- 成功时返回该任务的详细 JSON，字段与 `query_task_list` 的单项元素一致
 
 ### `query_task_list(agent_id: str) -> tuple[bool, str]`
 
