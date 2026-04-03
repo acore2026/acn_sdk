@@ -604,6 +604,34 @@ def test_register_callbacks_dispatches_websocket_and_moq_messages(sdk_environmen
     assert moq_messages == [("/task-1/did:acn:agent:alice", "Location", b"payload")]
 
 
+def test_handle_network_message_task_assigned_requests_task_execution(sdk_environment: object) -> None:
+    sdk = create_sdk()
+    sdk.identity_manager.agent_id = "did:acn:agent:2222222"
+    sdk.network_status = "Online"
+
+    captured_calls: list[tuple[str, str, str | None]] = []
+
+    def mock_request_task_execution(agent_id: str, task_info: str, task_id: str | None = None) -> tuple[bool, str]:
+        captured_calls.append((agent_id, task_info, task_id))
+        return (True, "generated-task-id")
+
+    sdk.request_task_execution = mock_request_task_execution  # type: ignore[method-assign]
+
+    result, _ = sdk.handle_network_message(
+        {
+            "type": "TASK_ASSIGNED",
+            "timestamp": "2025-01-01T00:00:00Z",
+            "payload": {
+                "task_description": "危险区域协同巡检",
+                "assigned_agents": ["did:acn:agent:2222222", "did:acn:agent:33333333"],
+            },
+        }
+    )
+
+    assert result is True
+    assert captured_calls == [("did:acn:agent:2222222", "危险区域协同巡检", None)]
+
+
 def test_deregister_robot_sends_disconnection_when_online(sdk_environment: object) -> None:
     sdk = create_sdk()
     robot_info = RobotInfo(

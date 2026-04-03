@@ -637,6 +637,8 @@ class AcnSDK:
                 self._dispatch_message_callback("on_task_collaboration_request", self.on_task_collaboration_request, payload)
             elif message_type == "DISCOVER_RESULT":
                 self._dispatch_message_callback("on_discover_result_received", self.on_discover_result_received, payload)
+            elif message_type == "TASK_ASSIGNED":
+                self._handle_task_assigned(payload)
             elif message_type == "START_TASK":
                 self._dispatch_message_callback("on_task_start_command", self.on_task_start_command, payload)
 
@@ -739,6 +741,34 @@ class AcnSDK:
             self._subscribed_tracks.add(track_key)
             if isinstance(task_id, str) and task_id:
                 self._track_task_subscribed(task_id, track_key)
+
+    def _handle_task_assigned(self, payload: dict[str, Any]) -> None:
+        agent_id = self.identity_manager.agent_id
+        if not agent_id:
+            raise RuntimeError("Local agent_id is not available in identity_manager.")
+
+        assigned_agents = payload.get("assigned_agents")
+        if isinstance(assigned_agents, list) and assigned_agents and agent_id not in assigned_agents:
+            self._logger.info(
+                "Ignoring TASK_ASSIGNED for unassigned local agent_id=%s assigned_agents=%s",
+                agent_id,
+                assigned_agents,
+            )
+            return
+
+        task_description = payload.get("task_description")
+        if not isinstance(task_description, str) or not task_description.strip():
+            raise ValueError("TASK_ASSIGNED payload.task_description must be a non-empty string.")
+
+        result, task_id = self.request_task_execution(agent_id, task_description, task_id=None)
+        if not result:
+            raise RuntimeError(f"Failed to request task execution for TASK_ASSIGNED: {task_id}")
+        self._logger.info(
+            "TASK_ASSIGNED triggered task execution. agent_id=%s task_description=%s generated_task_id=%s",
+            agent_id,
+            task_description,
+            task_id,
+        )
 
     def _handle_moq_object_received(self, namespace: str, track: str, payload: bytes) -> None:
         moq_message = {

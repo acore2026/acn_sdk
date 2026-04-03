@@ -95,7 +95,7 @@ def main() -> None:
             initiator_id,
             collaborator_candidates[0],
             task_id,
-            "协同声光驱离",
+            "声光驱离",
         )
         discover_result_received.set()
 
