@@ -13,9 +13,9 @@ from cryptography.hazmat.primitives.asymmetric import ec, rsa
 from cryptography.hazmat.primitives import serialization
 
 from acn_sdk.credential.credential_issuer import (
+    AGENT_FACTORY_ISSUER_DID,
     CredentialIssuer,
     HUAWEI_ISSUER_DID,
-    ROBOT_FACTORY_ISSUER_DID,
 )
 from acn_sdk.models import AgentInfo
 from acn_sdk.crypto import ensure_ec_keypair, sign_payload
@@ -291,7 +291,7 @@ def test_logout_rejects_processing_tasks(sdk_environment: object) -> None:
 
     result, joined_agent_id = sdk.join_network(agent_id)
     assert result is True
-    assert joined_agent_id == agent_id
+    assert joined_agent_id == ""
 
     result, task_id = sdk.request_task_execution(agent_id, "busy task")
     assert result is True
@@ -321,7 +321,7 @@ def test_deregister_rejects_processing_tasks(sdk_environment: object) -> None:
 
     result, joined_agent_id = sdk.join_network(agent_id)
     assert result is True
-    assert joined_agent_id == agent_id
+    assert joined_agent_id == ""
 
     result, task_id = sdk.request_task_execution(agent_id, "busy task")
     assert result is True
@@ -355,7 +355,7 @@ def test_join_network_uses_new_config_ports(sdk_environment: object) -> None:
 
     result, joined_agent_id = sdk.join_network(agent_id)
     assert result is True
-    assert joined_agent_id == agent_id
+    assert joined_agent_id == ""
 
     assert sdk.network_status == "Online"
     assert sdk.websocket_client is not None
@@ -397,7 +397,7 @@ def test_query_network_status_reflects_current_state(sdk_environment: object) ->
 
     result, joined_agent_id = sdk.join_network(agent_id)
     assert result is True
-    assert joined_agent_id == agent_id
+    assert joined_agent_id == ""
 
     result, status = sdk.query_network_status(agent_id)
     assert result is True
@@ -435,7 +435,7 @@ def test_join_network_and_task_flow(sdk_environment: object) -> None:
 
     result, joined_agent_id = sdk.join_network(agent_id)
     assert result is True
-    assert joined_agent_id == agent_id
+    assert joined_agent_id == ""
     assert sdk.network_status == "Online"
     assert websocket_client.sent_messages[0]["type"] == "SETUP"
     assert sdk.pipeline_log_reporter is not None
@@ -538,7 +538,7 @@ def test_join_network_and_task_flow(sdk_environment: object) -> None:
 
     result, logged_out_agent_id = sdk.logout_network(agent_id)
     assert result is True
-    assert logged_out_agent_id == agent_id
+    assert logged_out_agent_id == ""
     assert sdk.network_status == "Offline"
     assert websocket_client.sent_messages[-1]["type"] == "DISCONNECTION"
     assert sdk.task_manager is None
@@ -581,7 +581,7 @@ def test_accept_task_collaboration_requires_requesting_agent_id(sdk_environment:
 
     result, joined_agent_id = sdk.join_network(agent_id)
     assert result is True
-    assert joined_agent_id == agent_id
+    assert joined_agent_id == ""
 
     result, message = sdk.accept_task_collaboration(agent_id, "task-missing")
     assert result is False
@@ -626,7 +626,7 @@ def test_query_task_status_and_list(sdk_environment: object) -> None:
 
     result, joined_agent_id = sdk.join_network(agent_id)
     assert result is True
-    assert joined_agent_id == agent_id
+    assert joined_agent_id == ""
 
     result, task_id = sdk.request_task_execution(agent_id, "query status task")
     assert result is True
@@ -685,7 +685,7 @@ def test_join_network_starts_background_listener_for_subscribe_track(sdk_environ
 
     result, joined_agent_id = sdk.join_network(agent_id)
     assert result is True
-    assert joined_agent_id == agent_id
+    assert joined_agent_id == ""
     websocket_client.push_message(
         {
             "type": "SUBSCRIBE_TRACK",
@@ -705,7 +705,7 @@ def test_join_network_starts_background_listener_for_subscribe_track(sdk_environ
     assert moq_clients["subscriber"].subscribed == [(f"/task-12345/{agent_id}", "Location", agent_id)]
     result, logged_out_agent_id = sdk.logout_network(agent_id)
     assert result is True
-    assert logged_out_agent_id == agent_id
+    assert logged_out_agent_id == ""
 
 
 def test_register_callbacks_dispatches_websocket_and_moq_messages(sdk_environment: object) -> None:
@@ -795,7 +795,7 @@ def test_deregister_agent_sends_disconnection_when_online(sdk_environment: objec
 
     result, joined_agent_id = sdk.join_network(agent_id)
     assert result is True
-    assert joined_agent_id == agent_id
+    assert joined_agent_id == ""
     result, response = sdk.deregister_agent(agent_id, "retired")
 
     assert result is True
@@ -831,7 +831,7 @@ def test_clear_forces_processing_task_cleanup(sdk_environment: object) -> None:
 
     result, joined_agent_id = sdk.join_network(agent_id)
     assert result is True
-    assert joined_agent_id == agent_id
+    assert joined_agent_id == ""
     result, task_id = sdk.request_task_execution(agent_id, "busy task")
     assert result is True
     result, _ = sdk.task_info_report(agent_id, task_id, "Location", b"payload")
@@ -912,7 +912,7 @@ def test_request_task_collaboration_uses_arf_http_endpoint(sdk_environment: obje
 
     result, joined_agent_id = sdk.join_network(agent_id)
     assert result is True
-    assert joined_agent_id == agent_id
+    assert joined_agent_id == ""
 
     result, response = sdk.request_task_collaboration(agent_id, "task-12345", ["speaker"])
     assert result is True
@@ -983,7 +983,7 @@ def test_ensure_ec_keypair_replaces_legacy_rsa_keys(tmp_path: Path) -> None:
 def test_identity_manager_loads_legacy_single_capability_vc(tmp_path: Path) -> None:
     identity_file = tmp_path / "identity.json"
     identity_file.write_text(
-        '{"agent_id":"a1","vc0":{"id":"vc0"},"capability_vc":{"id":"cap1"},"robot_name":"AliceAgent","owner":"+8613800138000","priority":5,"metadata":{}}',
+        '{"agent_id":"a1","vc0":{"id":"vc0"},"capability_vc":{"id":"cap1"},"agent_name":"AliceAgent","owner":"+8613800138000","priority":5,"metadata":{}}',
         encoding="utf-8",
     )
 
@@ -997,7 +997,7 @@ def test_identity_manager_loads_legacy_single_capability_vc(tmp_path: Path) -> N
 def test_identity_manager_extracts_capability_names_from_existing_vcs(tmp_path: Path) -> None:
     identity_file = tmp_path / "identity.json"
     identity_file.write_text(
-        '{"agent_id":"a1","vc0":{"id":"vc0"},"capability_vcs":[{"id":"cap1","claims":{"agent_attribute":"pick"}},{"id":"cap2","claims":{"agent_attribute":"place"}}],"robot_name":"AliceAgent","owner":"+8613800138000","priority":5,"metadata":{}}',
+        '{"agent_id":"a1","vc0":{"id":"vc0"},"capability_vcs":[{"id":"cap1","claims":{"agent_attribute":"pick"}},{"id":"cap2","claims":{"agent_attribute":"place"}}],"agent_name":"AliceAgent","owner":"+8613800138000","priority":5,"metadata":{}}',
         encoding="utf-8",
     )
 
@@ -1011,7 +1011,7 @@ def test_identity_manager_extracts_capability_names_from_existing_vcs(tmp_path: 
 def test_identity_manager_get_pending_capabilities_deduplicates_input(tmp_path: Path) -> None:
     identity_file = tmp_path / "identity.json"
     identity_file.write_text(
-        '{"agent_id":"a1","vc0":{"id":"vc0"},"capability_names":["pick"],"robot_name":"AliceAgent","owner":"+8613800138000","priority":5,"metadata":{}}',
+        '{"agent_id":"a1","vc0":{"id":"vc0"},"capability_names":["pick"],"agent_name":"AliceAgent","owner":"+8613800138000","priority":5,"metadata":{}}',
         encoding="utf-8",
     )
 
@@ -1036,21 +1036,21 @@ def test_fetch_capacity_vc_uses_issuer_specific_private_key() -> None:
         Path("/home/acn/zxy/acn_sdk/credential/cert/Huawei_cert.crt"),
     )
 
-    robot_factory_issuer = CredentialIssuer()
-    robot_factory_vc = robot_factory_issuer.fetch_capacity_vc(agent_id, ["place"], "AliceAgent")[0]
+    agent_factory_issuer = CredentialIssuer()
+    agent_factory_vc = agent_factory_issuer.fetch_capacity_vc(agent_id, ["place"], "AliceAgent")[0]
 
-    assert robot_factory_vc["type"] == ["VerifiableCredential", "BindingSIMCredential"]
-    assert robot_factory_vc["issuer"] == ROBOT_FACTORY_ISSUER_DID
-    assert robot_factory_vc["proof"]["creator"] == f"{ROBOT_FACTORY_ISSUER_DID}#keys-1"
+    assert agent_factory_vc["type"] == ["VerifiableCredential", "BindingSIMCredential"]
+    assert agent_factory_vc["issuer"] == AGENT_FACTORY_ISSUER_DID
+    assert agent_factory_vc["proof"]["creator"] == f"{AGENT_FACTORY_ISSUER_DID}#keys-1"
     _verify_signature(
-        robot_factory_vc,
+        agent_factory_vc,
         Path("/home/acn/zxy/acn_sdk/credential/cert/Robot_Factory_cert.crt"),
     )
 
     mixed_vcs = huawei_issuer.fetch_capacity_vc(agent_id, ["可疑人员识别", "place", "目标跟踪"], "AliceAgent")
     assert [vc["issuer"] for vc in mixed_vcs] == [
         HUAWEI_ISSUER_DID,
-        ROBOT_FACTORY_ISSUER_DID,
+        AGENT_FACTORY_ISSUER_DID,
         HUAWEI_ISSUER_DID,
     ]
 

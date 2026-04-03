@@ -206,7 +206,7 @@ POST /acn-agent/v1/agent-deletions
 返回示例：
 
 ```python
-(True, "did:acn:agent:987654321")
+(True, "")
 ```
 
 ### `logout_network(agent_id: str) -> tuple[bool, str]`

@@ -44,7 +44,7 @@ class AcnSDK:
     ) -> None:
         self.config_path = Path(config_path).expanduser().resolve() if config_path is not None else DEFAULT_CONFIG_PATH
         self.config = SDKConfig.load(self.config_path)
-        self.robot_name = agent_name
+        self.agent_name = agent_name
         self.on_task_collaboration_request = None
         self.on_discover_result_received = None
         self.on_task_start_command = None
@@ -145,7 +145,7 @@ class AcnSDK:
             self.identity_manager.set_identity(
                 agent_id=agent_id,
                 vc0=vc0,
-                robot_name=agent_info.name,
+                agent_name=agent_info.name,
                 owner=agent_info.owner,
                 priority=agent_info.priority,
                 metadata=agent_info.metadata,
@@ -171,7 +171,7 @@ class AcnSDK:
                 capability_vcs = self.credential_issuer.fetch_capacity_vc(
                     agent_id,
                     new_capabilities,
-                    self.identity_manager.robot_name or self.robot_name,
+                    self.identity_manager.agent_name or self.agent_name,
                 )
                 self.identity_manager.set_capability_vcs(capability_vcs)
 
@@ -203,18 +203,18 @@ class AcnSDK:
             self._logger.exception("Failed to register robot attribute for agent_id=%s.", agent_id)
             return (False, str(exc))
 
-    def query_agent_id(self, robot_name: str, owner: str) -> tuple[bool, str]:
+    def query_agent_id(self, agent_name: str, owner: str) -> tuple[bool, str]:
         try:
-            agent_id = self.identity_manager.query_agent_id(robot_name, owner)
+            agent_id = self.identity_manager.query_agent_id(agent_name, owner)
             self._logger.info(
-                "Queried robot identity robot_name=%s owner=%s result=%s",
-                robot_name,
+                "Queried robot identity agent_name=%s owner=%s result=%s",
+                agent_name,
                 owner,
                 agent_id,
             )
             return (agent_id is not None, agent_id or "")
         except Exception as exc:
-            self._logger.exception("Failed to query robot identity robot_name=%s owner=%s.", robot_name, owner)
+            self._logger.exception("Failed to query robot identity agent_name=%s owner=%s.", agent_name, owner)
             return (False, str(exc))
 
     def deregister_agent(self, agent_id: str, reason: str) -> tuple[bool, str]:
@@ -308,7 +308,7 @@ class AcnSDK:
             self.network_status = NETWORK_ONLINE
             self._start_network_listener()
             self._logger.info("Network join successful for agent_id=%s", agent_id)
-            return (True, agent_id)
+            return (True, "")
         except Exception as exc:
             self._logger.exception("Failed to join network for agent_id=%s.", agent_id)
             return (False, str(exc))
@@ -338,7 +338,7 @@ class AcnSDK:
                     disconnection_message
                 )
             self.disconnect_all(close_http=False, clear_task_registry=False)
-            return (True, agent_id)
+            return (True, "")
         except Exception as exc:
             self._logger.exception("Failed to logout network for agent_id=%s.", agent_id)
             return (False, str(exc))
@@ -722,7 +722,7 @@ class AcnSDK:
     def _handle_subscribe_track(self, payload: dict[str, Any]) -> None:
         if self.moq_sub_client is None:
             raise RuntimeError("MoQ subscriber is not connected. Call join_network() first.")
-        local_agent_id = self.identity_manager.agent_id or self.robot_name
+        local_agent_id = self.identity_manager.agent_id or self.agent_name
         task_id = payload.get("task_id")
         for track_info in payload.get("track_list", []):
             namespace = track_info["namespace"]
@@ -785,7 +785,7 @@ class AcnSDK:
         self._network_listener_stop = threading.Event()
         self._network_listener_thread = threading.Thread(
             target=self._network_listener_loop,
-            name=f"AcnSDKNetworkListener-{self.robot_name}",
+            name=f"AcnSDKNetworkListener-{self.agent_name}",
             daemon=True,
         )
         self._network_listener_thread.start()
@@ -886,7 +886,7 @@ class AcnSDK:
                 namespace, track = self._split_track_key(track_key)
                 if self.moq_sub_client is not None:
                     try:
-                        self.moq_sub_client.unsubscribe(namespace, track, self.identity_manager.agent_id or self.robot_name)
+                        self.moq_sub_client.unsubscribe(namespace, track, self.identity_manager.agent_id or self.agent_name)
                     except Exception:
                         self._logger.exception("Failed to unsubscribe task_id=%s track=%s", task_id, track_key)
                 self._subscribed_tracks.discard(track_key)

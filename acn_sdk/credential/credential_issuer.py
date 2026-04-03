@@ -13,7 +13,7 @@ from cryptography.hazmat.primitives.asymmetric import ec
 
 
 HUAWEI_ISSUER_DID = "did:huaweiissuer@6gc.mnc015.mcc234.3gppnetwork"
-ROBOT_FACTORY_ISSUER_DID = "did:robotfactoryissuer@6gc.mnc015.mcc234.3gppnetwork"
+AGENT_FACTORY_ISSUER_DID = "did:robotfactoryissuer@6gc.mnc015.mcc234.3gppnetwork"
 SPECIAL_HUAWEI_CAPABILITIES = {"可疑人员识别", "目标跟踪"}
 CERT_DIR = Path(__file__).resolve().parent / "cert"
 PRIVATE_KEY_PASSWORD = b"aicore2026"
@@ -32,7 +32,7 @@ def sign_data(private_key_path: str, message: bytes) -> bytes:
 def _resolve_issuer_profile(capability: str) -> tuple[str, Path, str]:
     if capability in SPECIAL_HUAWEI_CAPABILITIES:
         return HUAWEI_ISSUER_DID, CERT_DIR / "Huawei_private_key.pem", "huawei"
-    return ROBOT_FACTORY_ISSUER_DID, CERT_DIR / "Robot_Factory_private_key.pem", "robot-factory"
+    return AGENT_FACTORY_ISSUER_DID, CERT_DIR / "Robot_Factory_private_key.pem", "robot-factory"
 
 
 class CredentialIssuer:

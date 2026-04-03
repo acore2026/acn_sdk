@@ -15,7 +15,7 @@ class IdentityManager:
         self.vc0: dict[str, Any] | None = None
         self.capability_names: list[str] = []
         self.capability_vcs: list[dict[str, Any]] = []
-        self.robot_name: str | None = None
+        self.agent_name: str | None = None
         self.owner: str | None = None
         self.priority: int | None = None
         self.metadata: dict[str, Any] = {}
@@ -41,7 +41,7 @@ class IdentityManager:
             self.capability_vcs = []
         if not self.capability_names:
             self.capability_names = self._extract_capability_names(self.capability_vcs)
-        self.robot_name = content.get("robot_name")
+        self.agent_name = content.get("agent_name")
         self.owner = content.get("owner")
         self.priority = content.get("priority")
         self.metadata = content.get("metadata", {})
@@ -53,7 +53,7 @@ class IdentityManager:
             "vc0": self.vc0,
             "capability_names": self.capability_names,
             "capability_vcs": self.capability_vcs,
-            "robot_name": self.robot_name,
+            "agent_name": self.agent_name,
             "owner": self.owner,
             "priority": self.priority,
             "metadata": self.metadata,
@@ -68,14 +68,14 @@ class IdentityManager:
         self,
         agent_id: str,
         vc0: dict[str, Any],
-        robot_name: str,
+        agent_name: str,
         owner: str,
         priority: int,
         metadata: dict[str, Any],
     ) -> None:
         self.agent_id = agent_id
         self.vc0 = vc0
-        self.robot_name = robot_name
+        self.agent_name = agent_name
         self.owner = owner
         self.priority = priority
         self.metadata = metadata
@@ -100,8 +100,8 @@ class IdentityManager:
             pending_capabilities.append(capability)
         return pending_capabilities
 
-    def query_agent_id(self, robot_name: str, owner: str) -> str | None:
-        if self.robot_name == robot_name and self.owner == owner:
+    def query_agent_id(self, agent_name: str, owner: str) -> str | None:
+        if self.agent_name == agent_name and self.owner == owner:
             return self.agent_id
         return None
 
@@ -111,7 +111,7 @@ class IdentityManager:
         self.vc0 = None
         self.capability_names = []
         self.capability_vcs = []
-        self.robot_name = None
+        self.agent_name = None
         self.owner = None
         self.priority = None
         self.metadata = {}
