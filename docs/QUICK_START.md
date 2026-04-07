@@ -58,7 +58,7 @@ python3 examples/demo_task_collaborator_realtime.py
 
 `demo_task_initiator_realtime.py` 和 `demo_task_collaborator_realtime.py` 则把原来的双机器人拆成两个独立终端入口，且同样不使用 `/debug/*` 注入。
 
-如果要在两个终端分别运行两个机器人，先启动 `demo_task_collaborator.py`，再启动 `demo_task_initiator.py`。两个脚本默认共享 `/tmp/acn-sdk-task-demo/demo-task-flow`，也可以通过 `--runtime-root` 和 `--session-name` 指定自己的会话目录。
+如果要在两个终端分别运行两个机器人，先启动协作方，再启动发起方。两个 realtime 脚本不再依赖共享目录来同步状态，发起方会通过 `query_agent_list()` 轮询网络可见的在线状态，协作方则只在本地保持进程存活，等待 WebSocket 回调触发。
 
 示例中的 SDK 导入路径已经切换为：
 

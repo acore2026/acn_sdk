@@ -949,6 +949,53 @@ def test_clear_forces_processing_task_cleanup(sdk_environment: object) -> None:
     assert moq_clients["subscriber"].unsubscribed == [(f"/{task_id}/did:acn:agent:peer-1", "Location", agent_id)]
 
 
+def test_clear_all_matches_websocket_clear_behavior(sdk_environment: object) -> None:
+    sdk = create_sdk()
+    agent_info = AgentInfo(
+        name="AliceAgent",
+        owner="+8613800138000",
+        description="AgentModel-X, SN123456",
+        priority=5,
+        metadata={},
+    )
+    result, agent_id = sdk.register_agent_info(agent_info)
+    assert result is True
+    websocket_client = MockWebSocketClient(
+        [{"type": "SETUP", "timestamp": "2025-01-01T00:00:00Z", "payload": {"status": "OK"}}]
+    )
+    moq_clients: dict[str, RecordingMoQClient] = {}
+    sdk._create_websocket_client = lambda: websocket_client
+
+    def create_moq_client(role: str) -> RecordingMoQClient:
+        client = RecordingMoQClient(
+            "127.0.0.1",
+            9003,
+            role,
+            on_object_received=sdk._handle_moq_object_received if role == "subscriber" else None,
+        )
+        moq_clients[role] = client
+        return client
+
+    sdk._create_moq_client = create_moq_client
+
+    result, joined_agent_id = sdk.join_network(agent_id)
+    assert result is True
+    assert joined_agent_id == ""
+    result, task_id = sdk.request_task_execution(agent_id, "busy task")
+    assert result is True
+    result, _ = sdk.task_info_report(agent_id, task_id, "Location", b"payload")
+    assert result is True
+
+    result, payload = sdk.clear_all()
+    assert result is True
+    assert payload == ""
+    assert sdk.identity_manager.agent_id is None
+    assert sdk.network_status == "offline"
+    assert sdk._task_registry == {}
+    assert moq_clients["publisher"].unpublished == [(f"/{task_id}/{agent_id}", "Location")]
+    assert moq_clients["subscriber"].unsubscribed == []
+
+
 def test_reload_config_reflects_yaml_changes(sdk_environment: object) -> None:
     config = sdk_environment
     sdk = create_sdk()

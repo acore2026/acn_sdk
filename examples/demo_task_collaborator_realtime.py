@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import argparse
 import sys
-import threading
+import time
 from pathlib import Path
 
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -14,9 +14,6 @@ from demo_task_shared import (
     DEFAULT_RUNTIME_ROOT,
     build_config_from_repo,
     prepare_session_dir,
-    read_runtime_value,
-    wait_for_runtime_value,
-    write_runtime_value,
 )
 
 DEFAULT_SESSION_NAME = "demo-task-flow-realtime"
@@ -60,35 +57,26 @@ def main() -> None:
     if not collaborator_ok:
         raise RuntimeError(collaborator_id)
     print(f"collaborator_id={collaborator_id}")
-    write_runtime_value(session_dir, "collaborator.agent_id", collaborator_id)
     print(f"collaborator local agent_info={collaborator.query_agent_info(collaborator_id)}")
     print(f"collaborator owner agents={collaborator.query_agent_list('13800138111')}")
 
     task_id_holder: dict[str, str] = {"value": ""}
-    collaboration_request_received = threading.Event()
-    task_start_received = threading.Event()
 
     def collaborator_on_task_collaboration_request(payload: dict) -> None:
         print(f"[RobotDog] on_task_collaboration_request payload={payload}")
         task_id = payload["task_id"]
         task_id_holder["value"] = task_id
-        write_runtime_value(session_dir, "task_id", task_id)
         collaborator.accept_task_collaboration(collaborator_id, task_id)
-        collaboration_request_received.set()
-        write_runtime_value(session_dir, "collaboration.request.received", task_id)
 
     def collaborator_on_task_start_command(payload: dict) -> None:
         print(f"[RobotDog] on_task_start_command payload={payload}")
         task_id = payload["task_id"]
         task_id_holder["value"] = task_id
-        write_runtime_value(session_dir, "task_id", task_id)
         collaborator.request_task_execution(
             collaborator_id,
             payload["task_description"],
             task_id=task_id,
         )
-        task_start_received.set()
-        write_runtime_value(session_dir, "task.start.received", task_id)
 
     collaborator.register_callbacks(
         on_task_collaboration_request=collaborator_on_task_collaboration_request,
@@ -100,10 +88,9 @@ def main() -> None:
 
     print(collaborator.register_agent_attribute(collaborator_id, ["声光驱离"]))
     print(f"collaborator join={collaborator.join_network(collaborator_id)}")
-    write_runtime_value(session_dir, "collaborator.ready", collaborator_id)
+    time.sleep(args.wait_timeout)
 
-    wait_for_runtime_value(session_dir, "shutdown.signal", timeout_seconds=args.wait_timeout)
-    task_id = task_id_holder["value"] or read_runtime_value(session_dir, "task_id")
+    task_id = task_id_holder["value"]
     if task_id:
         print(collaborator.request_terminate_task(collaborator_id, task_id, "demo finished"))
     print(collaborator.logout_network(collaborator_id))

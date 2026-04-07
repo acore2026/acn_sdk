@@ -717,6 +717,15 @@ class AcnSDK:
             self._logger.exception("Failed to handle network message.")
             return (False, str(exc))
 
+    def clear_all(self) -> tuple[bool, str]:
+        try:
+            self._clear_identity_and_network_state(clear_task_registry=True, force_stop_processing_tasks=True)
+            self._logger.info("Cleared all SDK state.")
+            return (True, "")
+        except Exception as exc:
+            self._logger.exception("Failed to clear SDK state.")
+            return (False, str(exc))
+
     def disconnect_all(self, close_http: bool = True, clear_task_registry: bool = False) -> tuple[bool, str]:
         try:
             self._stop_network_listener()

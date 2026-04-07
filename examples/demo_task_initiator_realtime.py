@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 import time
+import threading
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -16,21 +18,43 @@ from demo_task_shared import (
     build_config_from_repo,
     current_location_bytes,
     prepare_session_dir,
-    read_runtime_value,
     report_task_info_for_duration,
-    wait_for_runtime_value,
-    write_runtime_value,
 )
 
 DEFAULT_SESSION_NAME = "demo-task-flow-realtime"
+DEFAULT_SUBSCRIPTION_GRACE_PERIOD_SECONDS = 2.0
 
 
 def on_message_received(agent_name: str, namespace: str, track: str, payload: bytes) -> None:
     print(f"[{agent_name}] moq_message namespace={namespace} track={track} payload={payload!r}")
 
 
-def _wait_for_file(session_dir: Path, name: str, timeout_seconds: float) -> str:
-    return wait_for_runtime_value(session_dir, name, timeout_seconds=timeout_seconds)
+def _wait_for_remote_agent_id(
+    sdk: AcnSDK,
+    *,
+    owner: str,
+    agent_name: str,
+    timeout_seconds: float,
+) -> str:
+    deadline = time.monotonic() + timeout_seconds
+    while time.monotonic() < deadline:
+        result, response = sdk.query_agent_list(owner)
+        if result:
+            try:
+                agents = json.loads(response)
+            except json.JSONDecodeError:
+                agents = []
+            for agent in agents:
+                if (
+                    isinstance(agent, dict)
+                    and agent.get("agent_name") == agent_name
+                    and agent.get("agent_status") == "online"
+                ):
+                    agent_id = agent.get("agent_id")
+                    if isinstance(agent_id, str) and agent_id:
+                        return agent_id
+        time.sleep(0.5)
+    raise RuntimeError(f"Timed out waiting for {agent_name} to become online for owner {owner}.")
 
 
 def parse_args() -> argparse.Namespace:
@@ -38,6 +62,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--runtime-root", type=Path, default=DEFAULT_RUNTIME_ROOT)
     parser.add_argument("--session-name", default=DEFAULT_SESSION_NAME)
     parser.add_argument("--wait-timeout", type=float, default=120.0)
+    parser.add_argument(
+        "--subscription-grace-period",
+        type=float,
+        default=DEFAULT_SUBSCRIPTION_GRACE_PERIOD_SECONDS,
+        help="Seconds to wait after collaboration is accepted before sending sustained task reports.",
+    )
     parser.add_argument("--report-duration", type=float, default=10.0)
     return parser.parse_args()
 
@@ -65,17 +95,19 @@ def main() -> None:
     if not initiator_ok:
         raise RuntimeError(initiator_id)
     print(f"initiator_id={initiator_id}")
-    write_runtime_value(session_dir, "initiator.agent_id", initiator_id)
     print(f"initiator local agent_info={initiator.query_agent_info(initiator_id)}")
     print(f"initiator owner agents={initiator.query_agent_list('13800138000')}")
 
-    wait_for_runtime_value(session_dir, "collaborator.ready", timeout_seconds=args.wait_timeout)
-    collaborator_agent_id = read_runtime_value(session_dir, "collaborator.agent_id")
-    if not collaborator_agent_id:
-        raise RuntimeError("collaborator.agent_id is missing")
+    collaborator_agent_id = _wait_for_remote_agent_id(
+        initiator,
+        owner="13800138111",
+        agent_name="RobotDog",
+        timeout_seconds=args.wait_timeout,
+    )
     print(f"collaborator_id={collaborator_agent_id}")
 
     task_id_holder: dict[str, str] = {"value": ""}
+    discover_result_received = threading.Event()
 
     def initiator_on_discover_result_received(payload: dict) -> None:
         print(f"[AliceAgent] on_discover_result_received payload={payload}")
@@ -91,6 +123,7 @@ def main() -> None:
             task_id,
             "协同声光驱离",
         )
+        discover_result_received.set()
 
     initiator.register_callbacks(
         on_discover_result_received=initiator_on_discover_result_received,
@@ -101,13 +134,11 @@ def main() -> None:
 
     print(initiator.register_agent_attribute(initiator_id, ["可疑人员识别", "目标跟踪"]))
     print(f"initiator join={initiator.join_network(initiator_id)}")
-    write_runtime_value(session_dir, "initiator.ready", initiator_id)
 
     task_ok, task_id = initiator.request_task_execution(initiator_id, "可疑人员驱离")
     if not task_ok:
         raise RuntimeError(task_id)
     task_id_holder["value"] = task_id
-    write_runtime_value(session_dir, "task_id", task_id)
     print(f"task_id={task_id}")
     first_reported_at = datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
     print(
@@ -120,7 +151,9 @@ def main() -> None:
     )
 
     print(initiator.request_task_collaboration(initiator_id, task_id, ["声光驱离"]))
-    _wait_for_file(session_dir, "collaborator.subscribed", timeout_seconds=args.wait_timeout)
+    if not discover_result_received.wait(args.wait_timeout):
+        raise RuntimeError("Timed out waiting for DISCOVER_RESULT.")
+    time.sleep(args.subscription_grace_period)
 
     report_task_info_for_duration(
         initiator,
@@ -131,12 +164,9 @@ def main() -> None:
         start_seq=2,
     )
 
-    try:
-        print(initiator.request_terminate_task(initiator_id, task_id, "demo finished"))
-        print(initiator.logout_network(initiator_id))
-        print(initiator.deregister_agent(initiator_id, "demo completed"))
-    finally:
-        write_runtime_value(session_dir, "shutdown.signal", "done")
+    print(initiator.request_terminate_task(initiator_id, task_id, "demo finished"))
+    print(initiator.logout_network(initiator_id))
+    print(initiator.deregister_agent(initiator_id, "demo completed"))
 
 
 if __name__ == "__main__":

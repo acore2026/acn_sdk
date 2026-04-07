@@ -316,7 +316,13 @@ POST /arf/v1/agent-discoveries
 - `DISCOVER_RESULT`：触发 `on_discover_result_received(payload)` 回调
 - `START_TASK`：触发 `on_task_start_command(payload)` 回调
 
-### `disconnect_all(close_http: bool = True) -> tuple[bool, str]`
+### `clear_all() -> tuple[bool, str]`
+
+清空本地身份、网络连接、任务、发布和订阅缓存。
+
+行为与收到 WebSocket `CLEAR` 消息时一致，且不需要入参。
+
+### `disconnect_all(close_http: bool = True, clear_task_registry: bool = False) -> tuple[bool, str]`
 
 断开所有网络连接、停止任务，并把状态切回 `offline`。
 
