@@ -30,7 +30,7 @@ acn_sdk.task.task_manager.TaskManager
 - 自动加载 `config/config.yaml`
 - 初始化 `IdentityManager`、`HttpClient`、`CredentialIssuer`
 - 将 `WebSocketClient`、`moq_pub_client`、`moq_sub_client`、`TaskManager` 初值设为 `None`
-- 设置网络状态为 `OFFLINE`
+- 设置网络状态为 `offline`
 - 若本地不存在密钥，则自动生成并保存
 - 可通过 `config_path` 参数指定其他 YAML 配置文件；运行中修改 YAML 后可调用 `reload_config()` 重新加载
 
@@ -201,7 +201,7 @@ POST /acn-agent/v1/agent-deletions
 - 发送 `SETUP` 消息，必须收到对端 `SETUP` 且 `payload.status == "OK"`
 - 初始化 `moq_pub_client`、`moq_sub_client`、`TaskManager`
 - 成功入网后自动启动后台 WebSocket 监听线程，后续下行消息默认自动处理
-- 全部成功后将状态切换为 `ONLINE`
+- 全部成功后将状态切换为 `online`
 
 返回示例：
 
@@ -217,7 +217,7 @@ POST /acn-agent/v1/agent-deletions
 
 - 发送 `DISCONNECTION`
 - 断开 WebSocket / MoQ / TaskManager
-- 状态切换回 `OFFLINE`
+- 状态切换回 `offline`
 
 ### `query_network_status(agent_id: str) -> tuple[bool, str]`
 
@@ -252,7 +252,7 @@ POST /acn-agent/v1/task-executions
 
 说明：
 
-- 仅允许在 `ONLINE` 状态调用
+- 仅允许在 `online` 状态调用
 - 若未传 `task_id`，SDK 自动生成 `task-xxxxx`
 - 成功时返回 `(True, task_id)`
 - 失败时返回 `(False, error_message)`
@@ -273,7 +273,7 @@ POST /acn-agent/v1/task-execution-terminations
 
 行为：
 
-- 仅允许在 `ONLINE` 状态调用
+- 仅允许在 `online` 状态调用
 - 自动拼装 `namespace=/{task_id}/{agent_id}`
 - 若该 `namespace + track` 首次发布，则先执行 MOQ `publish`
 - 首次发布后发送 WebSocket `PUBLISH_TRACK`
@@ -318,7 +318,7 @@ POST /arf/v1/agent-discoveries
 
 ### `disconnect_all(close_http: bool = True) -> tuple[bool, str]`
 
-断开所有网络连接、停止任务，并把状态切回 `OFFLINE`。
+断开所有网络连接、停止任务，并把状态切回 `offline`。
 
 ## 2. 配置文件
 

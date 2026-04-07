@@ -147,7 +147,76 @@ def test_register_query_and_deregister_flow(sdk_environment: object) -> None:
     deregister_response = _decode_json_result(deregister_response)
     assert deregister_response["result"] == "success"
     assert sdk.identity_manager.agent_id is None
-    assert sdk.network_status == "Offline"
+    assert sdk.network_status == "offline"
+
+
+def test_query_agent_info_returns_local_info_for_local_agent(sdk_environment: object) -> None:
+    sdk = create_sdk()
+    agent_info = AgentInfo(
+        name="AliceAgent",
+        owner="+8613800138000",
+        description="AgentModel-X, SN123456",
+        priority=5,
+        metadata={},
+    )
+
+    result, agent_id = sdk.register_agent_info(agent_info)
+    assert result is True
+    result, _ = sdk.register_agent_attribute(agent_id, ["pick", "place"])
+    assert result is True
+
+    result, response = sdk.query_agent_info(agent_id)
+    assert result is True
+    parsed = _decode_json_result(response)
+    assert parsed == {
+        "agent_id": agent_id,
+        "agent_name": "AliceAgent",
+        "agent_status": "offline",
+        "agent_capabilities": ["pick", "place"],
+        "priority": 5,
+    }
+    assert all(request[0] != "/arf/v1/agent-info" for request in sdk.http_client._arf_session.requests)
+
+
+def test_query_agent_info_uses_arf_for_remote_agent(sdk_environment: object) -> None:
+    sdk = create_sdk()
+
+    result, response = sdk.query_agent_info("did:acn:agent:111111")
+    assert result is True
+    parsed = _decode_json_result(response)
+    assert parsed == {
+        "agent_id": "did:acn:agent:111111",
+        "agent_name": "巡检机器人A",
+        "agent_status": "online",
+        "agent_capabilities": ["camera", "monitoring", "night_vision"],
+        "priority": 1,
+    }
+    assert sdk.http_client._arf_session.requests[-1][0] == "/arf/v1/agent-info"
+
+
+def test_query_agent_list_uses_acn_agent_endpoint(sdk_environment: object) -> None:
+    sdk = create_sdk()
+
+    result, response = sdk.query_agent_list("did:acn:owner:12345")
+    assert result is True
+    parsed = json.loads(response)
+    assert parsed == [
+        {
+            "agent_id": "did:acn:agent:111111",
+            "agent_name": "巡检机器人A",
+            "agent_status": "online",
+            "agent_capabilities": ["camera", "monitoring", "night_vision"],
+            "priority": 1,
+        },
+        {
+            "agent_id": "did:acn:agent:222222",
+            "agent_name": "巡检机器人B",
+            "agent_status": "offline",
+            "agent_capabilities": ["speaker"],
+            "priority": 2,
+        },
+    ]
+    assert sdk.http_client._session.requests[-1][0] == "/acn-agent/v1/owner-agents"
 
 
 def test_agent_info_defaults_priority_and_metadata() -> None:
@@ -357,7 +426,7 @@ def test_join_network_uses_new_config_ports(sdk_environment: object) -> None:
     assert result is True
     assert joined_agent_id == ""
 
-    assert sdk.network_status == "Online"
+    assert sdk.network_status == "online"
     assert sdk.websocket_client is not None
     assert sdk.websocket_client.url == "ws://127.0.0.1:9002/ws"
     assert sdk.moq_pub_client is not None
@@ -369,8 +438,8 @@ def test_join_network_uses_new_config_ports(sdk_environment: object) -> None:
     assert sdk.moq_sub_client.remote_port == 9003
     assert sdk.moq_sub_client.role == "subscriber"
 
-    assert sdk.disconnect_all() == (True, "Offline")
-    assert sdk.network_status == "Offline"
+    assert sdk.disconnect_all() == (True, "offline")
+    assert sdk.network_status == "offline"
 
 
 def test_query_network_status_reflects_current_state(sdk_environment: object) -> None:
@@ -387,7 +456,7 @@ def test_query_network_status_reflects_current_state(sdk_environment: object) ->
 
     result, status = sdk.query_network_status(agent_id)
     assert result is True
-    assert status == "Offline"
+    assert status == "offline"
 
     websocket_client = MockWebSocketClient(
         [{"type": "SETUP", "timestamp": "2025-01-01T00:00:00Z", "payload": {"status": "OK"}}]
@@ -401,7 +470,7 @@ def test_query_network_status_reflects_current_state(sdk_environment: object) ->
 
     result, status = sdk.query_network_status(agent_id)
     assert result is True
-    assert status == "Online"
+    assert status == "online"
 
 
 def test_join_network_and_task_flow(sdk_environment: object) -> None:
@@ -436,7 +505,7 @@ def test_join_network_and_task_flow(sdk_environment: object) -> None:
     result, joined_agent_id = sdk.join_network(agent_id)
     assert result is True
     assert joined_agent_id == ""
-    assert sdk.network_status == "Online"
+    assert sdk.network_status == "online"
     assert websocket_client.sent_messages[0]["type"] == "SETUP"
     assert sdk.pipeline_log_reporter is not None
     assert any(
@@ -539,7 +608,7 @@ def test_join_network_and_task_flow(sdk_environment: object) -> None:
     result, logged_out_agent_id = sdk.logout_network(agent_id)
     assert result is True
     assert logged_out_agent_id == ""
-    assert sdk.network_status == "Offline"
+    assert sdk.network_status == "offline"
     assert websocket_client.sent_messages[-1]["type"] == "DISCONNECTION"
     assert sdk.task_manager is None
 
@@ -603,7 +672,7 @@ def test_task_info_report_requires_join_network_for_moq_connections(sdk_environm
     result, message = sdk.task_info_report(agent_id, "task-12345", "Location", b"payload")
     assert result is False
     assert "must be online" in message
-    assert sdk.disconnect_all() == (True, "Offline")
+    assert sdk.disconnect_all() == (True, "offline")
 
 
 def test_query_task_status_and_list(sdk_environment: object) -> None:
@@ -767,7 +836,7 @@ def test_register_callbacks_dispatches_websocket_and_moq_messages(sdk_environmen
 def test_handle_network_message_task_assigned_requests_task_execution(sdk_environment: object) -> None:
     sdk = create_sdk()
     sdk.identity_manager.agent_id = "did:acn:agent:2222222"
-    sdk.network_status = "Online"
+    sdk.network_status = "online"
 
     captured_calls: list[tuple[str, str, str | None]] = []
 
@@ -818,7 +887,7 @@ def test_deregister_agent_sends_disconnection_when_online(sdk_environment: objec
     response = _decode_json_result(response)
     assert response["result"] == "success"
     assert websocket_client.sent_messages[-1]["type"] == "DISCONNECTION"
-    assert sdk.network_status == "Offline"
+    assert sdk.network_status == "offline"
 
 
 def test_clear_forces_processing_task_cleanup(sdk_environment: object) -> None:
@@ -874,7 +943,7 @@ def test_clear_forces_processing_task_cleanup(sdk_environment: object) -> None:
     )
     assert result is True
     assert sdk.identity_manager.agent_id is None
-    assert sdk.network_status == "Offline"
+    assert sdk.network_status == "offline"
     assert sdk._task_registry == {}
     assert moq_clients["publisher"].unpublished == [(f"/{task_id}/{agent_id}", "Location")]
     assert moq_clients["subscriber"].unsubscribed == [(f"/{task_id}/did:acn:agent:peer-1", "Location", agent_id)]

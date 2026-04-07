@@ -61,6 +61,8 @@ def main() -> None:
         raise RuntimeError(collaborator_id)
     print(f"collaborator_id={collaborator_id}")
     write_runtime_value(session_dir, "collaborator.agent_id", collaborator_id)
+    print(f"collaborator local agent_info={collaborator.query_agent_info(collaborator_id)}")
+    print(f"collaborator owner agents={collaborator.query_agent_list('13800138111')}")
 
     task_id_holder: dict[str, str] = {"value": ""}
     collaboration_request_received = threading.Event()

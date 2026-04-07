@@ -10,7 +10,9 @@ from ..logging_utils import format_json_for_log
 from ..models import (
     AgentCardRequest,
     AgentDiscoveryRequest,
+    AgentInfoQueryRequest,
     DeregisterRequest,
+    OwnerAgentsQueryRequest,
     TaskExecutionRequest,
     TaskTerminationRequest,
 )
@@ -56,6 +58,12 @@ class HttpClient:
 
     def request_task_collaboration(self, payload: AgentDiscoveryRequest) -> dict[str, Any]:
         return self._post("/arf/v1/agent-discoveries", payload.model_dump(mode="json"), use_arf=True)
+
+    def query_agent_info(self, payload: AgentInfoQueryRequest) -> dict[str, Any]:
+        return self._post("/arf/v1/agent-info", payload.model_dump(mode="json"), use_arf=True)
+
+    def query_agent_list(self, payload: OwnerAgentsQueryRequest) -> dict[str, Any]:
+        return self._post("/acn-agent/v1/owner-agents", payload.model_dump(mode="json"))
 
     def _post(self, path: str, body: dict[str, Any], use_arf: bool = False) -> dict[str, Any]:
         headers = {"Content-Type": "application/json"}

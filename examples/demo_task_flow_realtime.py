@@ -133,9 +133,16 @@ def main() -> None:
 
     print(initiator.register_agent_attribute(initiator_id, ["可疑人员识别", "目标跟踪"]))
     print(collaborator.register_agent_attribute(collaborator_id, ["声光驱离"]))
+    print(f"initiator local agent_info={initiator.query_agent_info(initiator_id)}")
+    print(f"collaborator remote agent_info={initiator.query_agent_info(collaborator_id)}")
+    print(f"initiator owner agents={initiator.query_agent_list('13800138000')}")
+    print(f"collaborator owner agents={collaborator.query_agent_list('13800138111')}")
 
     print(f"initiator join={initiator.join_network(initiator_id)}")
     print(f"collaborator join={collaborator.join_network(collaborator_id)}")
+    print(f"1 initiator local agent_info={initiator.query_agent_info(initiator_id)}")
+    print(f"1 collaborator remote agent_info={initiator.query_agent_info(collaborator_id)}")
+    
 
     task_ok, task_id = initiator.request_task_execution(initiator_id, "可疑人员驱离")
     if not task_ok:
@@ -168,10 +175,15 @@ def main() -> None:
     )
     collaborator.request_terminate_task(collaborator_id, task_id, "demo finished")
     collaborator.logout_network(collaborator_id)
+    print(f"2. collaborator remote agent_info={initiator.query_agent_info(collaborator_id)}")
     initiator.request_terminate_task(initiator_id, task_id, "demo finished")
     initiator.logout_network(initiator_id)
     collaborator.deregister_agent(collaborator_id, "demo completed")
     initiator.deregister_agent(initiator_id, "demo completed")
+    print(f"initiator local agent_info={initiator.query_agent_info(initiator_id)}")
+    print(f"collaborator remote agent_info={initiator.query_agent_info(collaborator_id)}")
+    print(f"initiator owner agents={initiator.query_agent_list('13800138000')}")
+    print(f"collaborator owner agents={collaborator.query_agent_list('13800138111')}")
 
 
 if __name__ == "__main__":

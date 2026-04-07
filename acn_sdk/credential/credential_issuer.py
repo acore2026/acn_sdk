@@ -50,7 +50,7 @@ class CredentialIssuer:
                 "id": f"{credential_prefix}/credentials/{credential_suffix}",
                 "type": ["VerifiableCredential", "BindingSIMCredential"],
                 "issuer": issuer_id,
-                "valid_from": now.isoformat(),
+                "valid_from": (now - timedelta(days=1)).isoformat(),
                 "valid_until": (now + timedelta(days=365)).isoformat(),
                 "claims": {
                     "agent_name": agent_name,

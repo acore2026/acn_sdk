@@ -18,8 +18,10 @@ from .reporting.pipeline_log_reporter import PipelineLogReporter
 from .models import (
     AgentCardRequest,
     AgentDiscoveryRequest,
+    AgentInfoQueryRequest,
     DeregisterRequest,
     AgentInfo,
+    OwnerAgentsQueryRequest,
     TaskExecutionRequest,
     TaskTerminationRequest,
     WebSocketMessage,
@@ -30,8 +32,8 @@ from .network.websocket_client import WebSocketClient
 from .task.task_manager import TaskManager
 
 DEFAULT_CONFIG_PATH = Path(__file__).resolve().parent.parent / "config" / "config.yaml"
-NETWORK_ONLINE = "Online"
-NETWORK_OFFLINE = "Offline"
+NETWORK_ONLINE = "online"
+NETWORK_OFFLINE = "offline"
 TASK_PROCESSING = "Processing"
 TASK_TERMINATED = "Terminated"
 
@@ -215,6 +217,58 @@ class AcnSDK:
             return (agent_id is not None, agent_id or "")
         except Exception as exc:
             self._logger.exception("Failed to query robot identity agent_name=%s owner=%s.", agent_name, owner)
+            return (False, str(exc))
+
+    def query_agent_info(self, agent_id: str) -> tuple[bool, str]:
+        try:
+            if not agent_id:
+                raise ValueError("agent_id must not be empty.")
+            local_agent_id = self.identity_manager.agent_id
+            if local_agent_id == agent_id:
+                result = self._build_local_agent_info()
+                self._logger.info("Queried local agent info agent_id=%s result=\n%s", agent_id, format_json_for_log(result))
+                return (True, self._stringify_result(result))
+
+            if self.http_client is None:
+                raise RuntimeError("HTTP client is not initialized.")
+            request = AgentInfoQueryRequest(agent_id=agent_id)
+            self._report_pipeline_log(
+                protocol="HTTP",
+                destination="ARF",
+                method="POST",
+                url="/arf/v1/agent-info",
+                headers={"Content-Type": "application/json"},
+                abstract="Query agent info",
+                content=request.model_dump(mode="json"),
+            )
+            response = self.http_client.query_agent_info(request)
+            self._logger.info("Queried remote agent info agent_id=%s result=\n%s", agent_id, format_json_for_log(response))
+            return (True, self._stringify_result(response))
+        except Exception as exc:
+            self._logger.exception("Failed to query agent info for agent_id=%s.", agent_id)
+            return (False, str(exc))
+
+    def query_agent_list(self, owner_name: str) -> tuple[bool, str]:
+        try:
+            if not owner_name:
+                raise ValueError("owner_name must not be empty.")
+            if self.http_client is None:
+                raise RuntimeError("HTTP client is not initialized.")
+            request = OwnerAgentsQueryRequest(owner=owner_name)
+            self._report_pipeline_log(
+                protocol="HTTP",
+                destination="ACN Agent",
+                method="POST",
+                url="/acn-agent/v1/owner-agents",
+                headers={"Content-Type": "application/json"},
+                abstract="Query owner agent list",
+                content=request.model_dump(mode="json"),
+            )
+            response = self.http_client.query_agent_list(request)
+            self._logger.info("Queried agent list owner=%s result=\n%s", owner_name, format_json_for_log(response))
+            return (True, self._stringify_result(response))
+        except Exception as exc:
+            self._logger.exception("Failed to query agent list for owner=%s.", owner_name)
             return (False, str(exc))
 
     def deregister_agent(self, agent_id: str, reason: str) -> tuple[bool, str]:
@@ -774,6 +828,18 @@ class AcnSDK:
     def _handle_moq_object_received(self, namespace: str, track: str, payload: bytes) -> None:
         if self.on_message_received is not None:
             self.on_message_received(namespace, track, payload)
+
+    def _build_local_agent_info(self) -> dict[str, Any]:
+        agent_id = self.identity_manager.agent_id
+        if not agent_id:
+            raise RuntimeError("Local agent_id is not available in identity_manager.")
+        return {
+            "agent_id": agent_id,
+            "agent_name": self.identity_manager.agent_name or self.agent_name,
+            "agent_status": self.network_status,
+            "agent_capabilities": list(self.identity_manager.capability_names),
+            "priority": self.identity_manager.priority or 0,
+        }
 
     def _start_network_listener(self) -> None:
         if self.websocket_client is None:

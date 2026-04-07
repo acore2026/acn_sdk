@@ -52,6 +52,14 @@ class AgentDiscoveryRequest(BaseModel):
     timestamp: str
 
 
+class AgentInfoQueryRequest(BaseModel):
+    agent_id: str
+
+
+class OwnerAgentsQueryRequest(BaseModel):
+    owner: str
+
+
 class WebSocketMessage(BaseModel):
     type: str
     timestamp: str

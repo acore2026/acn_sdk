@@ -123,6 +123,35 @@ class MockHttpSession:
             }
             return MockResponse(200, payload)
 
+        if url == "/arf/v1/agent-info":
+            payload = {
+                "agent_id": json["agent_id"],
+                "agent_name": "巡检机器人A",
+                "agent_status": "online",
+                "agent_capabilities": ["camera", "monitoring", "night_vision"],
+                "priority": 1,
+            }
+            return MockResponse(200, payload)
+
+        if url == "/acn-agent/v1/owner-agents":
+            payload = [
+                {
+                    "agent_id": "did:acn:agent:111111",
+                    "agent_name": "巡检机器人A",
+                    "agent_status": "online",
+                    "agent_capabilities": ["camera", "monitoring", "night_vision"],
+                    "priority": 1,
+                },
+                {
+                    "agent_id": "did:acn:agent:222222",
+                    "agent_name": "巡检机器人B",
+                    "agent_status": "offline",
+                    "agent_capabilities": ["speaker"],
+                    "priority": 2,
+                },
+            ]
+            return MockResponse(200, payload)
+
         return MockResponse(404, {"result": "error", "message": "unknown path"})
 
     def close(self) -> None:

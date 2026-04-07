@@ -71,7 +71,7 @@ sequenceDiagram
     SDK->>GW: WebSocket SETUP
     GW-->>SDK: SETUP/OK
     SDK->>SDK: 初始化 MoQ pub/sub
-    SDK-->>Robot: ONLINE
+    SDK-->>Robot: online
 
     Robot->>SDK: request_task_execution(agent_id, task_info)
     SDK->>HTTP: POST /acn-agent/v1/task-executions
@@ -108,10 +108,10 @@ flowchart LR
 
 ## 5. 状态设计
 
-- 初始状态：`OFFLINE`
-- 连接网络后：`ONLINE`
-- 去注册或断开连接后：`OFFLINE`
-- 任务上报前提：必须 `ONLINE`
+- 初始状态：`offline`
+- 连接网络后：`online`
+- 去注册或断开连接后：`offline`
+- 任务上报前提：必须 `online`
 
 状态切换均通过 `logging` 输出。
 

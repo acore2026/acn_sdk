@@ -232,6 +232,10 @@ def main() -> None:
 
     print(initiator.register_agent_attribute(initiator_id, ["可疑人员识别", "目标跟踪"]))
     print(collaborator.register_agent_attribute(collaborator_id, ["声光驱离"]))
+    print(f"initiator local agent_info={initiator.query_agent_info(initiator_id)}")
+    print(f"collaborator remote agent_info={initiator.query_agent_info(collaborator_id)}")
+    print(f"initiator owner agents={initiator.query_agent_list('13800138000')}")
+    print(f"collaborator owner agents={collaborator.query_agent_list('13800138111')}")
 
     print(f"initiator join={initiator.join_network(initiator_id)}")
     print(f"collaborator join={collaborator.join_network(collaborator_id)}")

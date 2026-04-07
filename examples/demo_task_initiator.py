@@ -65,6 +65,8 @@ def main() -> None:
         raise RuntimeError(initiator_id)
     print(f"initiator_id={initiator_id}")
     write_runtime_value(session_dir, "initiator.agent_id", initiator_id)
+    print(f"initiator local agent_info={initiator.query_agent_info(initiator_id)}")
+    print(f"initiator owner agents={initiator.query_agent_list('13800138000')}")
 
     wait_for_runtime_value(session_dir, "collaborator.ready", timeout_seconds=args.wait_timeout)
     collaborator_agent_id = read_runtime_value(session_dir, "collaborator.agent_id")

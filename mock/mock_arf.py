@@ -13,6 +13,7 @@ from acn_sdk.logging_config import setup_logging
 setup_logging()
 logger = logging.getLogger("mock_arf")
 app = FastAPI(title="Mock ARF", version="0.1.0")
+AGENT_CARD_REGISTRY: dict[str, dict] = {}
 
 
 class AgentCard(BaseModel):
@@ -35,6 +36,14 @@ class AgentDiscovery(BaseModel):
 def create_agent_card(payload: AgentCard) -> dict:
     logger.info("Received agent card registration: %s", payload.model_dump(mode="json"))
     capabilities = [vc["claims"]["agent_attribute"] for vc in payload.vc_list[1:] if "claims" in vc and "agent_attribute" in vc["claims"]]
+    vc0_claims = payload.vc_list[0].get("claims", {}) if payload.vc_list else {}
+    AGENT_CARD_REGISTRY[payload.agent_id] = {
+        "agent_id": payload.agent_id,
+        "agent_name": vc0_claims.get("agent_name", ""),
+        "agent_status": "online",
+        "agent_capabilities": capabilities,
+        "priority": payload.priority,
+    }
     response = {
         "result": "success",
         "message": "Agent capability registered",
@@ -56,6 +65,23 @@ def request_agent_discovery(payload: AgentDiscovery) -> dict:
         "required_capabilities": payload.required_capabilities,
     }
     logger.info("Responding agent discovery request: %s", response)
+    return response
+
+
+@app.post("/arf/v1/agent-info")
+def query_agent_info(payload: dict) -> dict:
+    logger.info("Received agent info query: %s", payload)
+    agent_id = payload.get("agent_id", "")
+    if agent_id not in AGENT_CARD_REGISTRY:
+        return {
+            "agent_id": agent_id,
+            "agent_name": "",
+            "agent_status": "offline",
+            "agent_capabilities": [],
+            "priority": 0,
+        }
+    response = AGENT_CARD_REGISTRY[agent_id]
+    logger.info("Responding agent info query: %s", response)
     return response
 
 
