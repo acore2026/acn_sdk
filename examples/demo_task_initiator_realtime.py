@@ -22,40 +22,7 @@ from demo_task_shared import (
 )
 
 DEFAULT_SESSION_NAME = "demo-task-flow-realtime"
-DEFAULT_SUBSCRIPTION_GRACE_PERIOD_SECONDS = 2.0
-
-
-def on_message_received(agent_name: str, namespace: str, track: str, payload: bytes) -> None:
-    print(f"[{agent_name}] moq_message namespace={namespace} track={track} payload={payload!r}")
-
-
-def _wait_for_remote_agent_id(
-    sdk: AcnSDK,
-    *,
-    owner: str,
-    agent_name: str,
-    timeout_seconds: float,
-) -> str:
-    deadline = time.monotonic() + timeout_seconds
-    while time.monotonic() < deadline:
-        result, response = sdk.query_agent_list(owner)
-        if result:
-            try:
-                agents = json.loads(response)
-            except json.JSONDecodeError:
-                agents = []
-            for agent in agents:
-                if (
-                    isinstance(agent, dict)
-                    and agent.get("agent_name") == agent_name
-                    and agent.get("agent_status") == "online"
-                ):
-                    agent_id = agent.get("agent_id")
-                    if isinstance(agent_id, str) and agent_id:
-                        return agent_id
-        time.sleep(0.5)
-    raise RuntimeError(f"Timed out waiting for {agent_name} to become online for owner {owner}.")
-
+DEFAULT_SUBSCRIPTION_GRACE_PERIOD_SECONDS = 5.0
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run the initiator side without stubbing intermediate messages.")
@@ -98,16 +65,11 @@ def main() -> None:
     print(f"initiator local agent_info={initiator.query_agent_info(initiator_id)}")
     print(f"initiator owner agents={initiator.query_agent_list('13800138000')}")
 
-    collaborator_agent_id = _wait_for_remote_agent_id(
-        initiator,
-        owner="13800138111",
-        agent_name="RobotDog",
-        timeout_seconds=args.wait_timeout,
-    )
-    print(f"collaborator_id={collaborator_agent_id}")
-
     task_id_holder: dict[str, str] = {"value": ""}
     discover_result_received = threading.Event()
+
+    def initiator_on_task_collaboration_request(payload: dict) -> None:
+        print(f"[AliceAgent] on_task_collaboration_request payload={payload}")
 
     def initiator_on_discover_result_received(payload: dict) -> None:
         print(f"[AliceAgent] on_discover_result_received payload={payload}")
@@ -125,11 +87,17 @@ def main() -> None:
         )
         discover_result_received.set()
 
+    def initiator_on_task_start_command(payload: dict) -> None:
+        print(f"[AliceAgent] on_task_start_command payload={payload}")
+
+    def initiator_on_message_received(namespace: str, track: str, payload: bytes) -> None:
+        print(f"moq_message namespace={namespace} track={track} payload={payload!r}")
+
     initiator.register_callbacks(
+        on_task_collaboration_request=initiator_on_task_collaboration_request,
         on_discover_result_received=initiator_on_discover_result_received,
-        on_message_received=lambda namespace, track, payload: on_message_received(
-            "AliceAgent", namespace, track, payload
-        ),
+        on_task_start_command=initiator_on_task_start_command,
+        on_message_received=initiator_on_message_received,
     )
 
     print(initiator.register_agent_attribute(initiator_id, ["可疑人员识别", "目标跟踪"]))

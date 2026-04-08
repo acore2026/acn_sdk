@@ -14,11 +14,11 @@ sys.path.insert(0, str(SCRIPT_DIR))
 sys.path.insert(0, str(SCRIPT_DIR.parent))
 
 from acn_sdk import AcnSDK, AgentInfo
-from demo_task_shared import build_config_from_repo, current_location_bytes, report_task_info_for_duration
-
-
-def on_message_received(agent_name: str, namespace: str, track: str, payload: bytes) -> None:
-    print(f"[{agent_name}] moq_message namespace={namespace} track={track} payload={payload!r}")
+from demo_task_shared import (
+    build_config_from_repo,
+    current_location_bytes,
+    report_task_info_for_duration,
+)
 
 
 def parse_args() -> argparse.Namespace:
@@ -82,6 +82,9 @@ def main() -> None:
     discover_result_received = threading.Event()
     task_start_received = threading.Event()
 
+    def initiator_on_task_collaboration_request(payload: dict) -> None:
+        print(f"[AliceAgent] on_task_collaboration_request payload={payload}")
+
     def initiator_on_discover_result_received(payload: dict) -> None:
         print(f"[AliceAgent] on_discover_result_received payload={payload}")
         collaborator_candidates = payload.get("discover_result", [])
@@ -105,6 +108,9 @@ def main() -> None:
         collaborator.accept_task_collaboration(collaborator_id, task_id)
         collaboration_request_received.set()
 
+    def collaborator_on_discover_result_received(payload: dict) -> None:
+        print(f"[RobotDog] on_discover_result_received payload={payload}")
+
     def collaborator_on_task_start_command(payload: dict) -> None:
         print(f"[RobotDog] on_task_start_command payload={payload}")
         task_id = payload["task_id"]
@@ -116,19 +122,26 @@ def main() -> None:
         )
         task_start_received.set()
 
+    def initiator_on_task_start_command(payload: dict) -> None:
+        print(f"[AliceAgent] on_task_start_command payload={payload}")
+
+    def initiator_on_message_received(namespace: str, track: str, payload: bytes) -> None:
+        print(f"moq_message namespace={namespace} track={track} payload={payload!r}")
+
+    def collaborator_on_message_received(namespace: str, track: str, payload: bytes) -> None:
+        print(f"moq_message namespace={namespace} track={track} payload={payload!r}")
+
     initiator.register_callbacks(
+        on_task_collaboration_request=initiator_on_task_collaboration_request,
         on_discover_result_received=initiator_on_discover_result_received,
-        on_message_received=lambda namespace, track, payload: on_message_received(
-            "AliceAgent", namespace, track, payload
-        ),
+        on_task_start_command=initiator_on_task_start_command,
+        on_message_received=initiator_on_message_received,
     )
     collaborator.register_callbacks(
         on_task_collaboration_request=collaborator_on_task_collaboration_request,
+        on_discover_result_received=collaborator_on_discover_result_received,
         on_task_start_command=collaborator_on_task_start_command,
-        
-        on_message_received=lambda namespace, track, payload: on_message_received(
-            "RobotDog", namespace, track, payload
-        ),
+        on_message_received=collaborator_on_message_received,
     )
 
     print(initiator.register_agent_attribute(initiator_id, ["可疑人员识别", "目标跟踪"]))

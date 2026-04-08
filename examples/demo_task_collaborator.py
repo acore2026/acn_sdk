@@ -20,10 +20,6 @@ from demo_task_shared import (
 )
 
 
-def on_message_received(agent_name: str, namespace: str, track: str, payload: bytes) -> None:
-    print(f"[{agent_name}] moq_message namespace={namespace} track={track} payload={payload!r}")
-
-
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run the collaborator side of the ACN task demo.")
     parser.add_argument("--runtime-root", type=Path, default=DEFAULT_RUNTIME_ROOT)
@@ -71,6 +67,9 @@ def main() -> None:
         write_runtime_value(session_dir, "task_id", task_id)
         collaborator.accept_task_collaboration(collaborator_id, task_id)
 
+    def collaborator_on_discover_result_received(payload: dict) -> None:
+        print(f"[RobotDog] on_discover_result_received payload={payload}")
+
     def collaborator_on_task_start_command(payload: dict) -> None:
         print(f"[RobotDog] on_task_start_command payload={payload}")
         task_id = payload["task_id"]
@@ -82,12 +81,14 @@ def main() -> None:
             task_id=task_id,
         )
 
+    def collaborator_on_message_received(namespace: str, track: str, payload: bytes) -> None:
+        print(f"moq_message namespace={namespace} track={track} payload={payload!r}")
+
     collaborator.register_callbacks(
         on_task_collaboration_request=collaborator_on_task_collaboration_request,
+        on_discover_result_received=collaborator_on_discover_result_received,
         on_task_start_command=collaborator_on_task_start_command,
-        on_message_received=lambda namespace, track, payload: on_message_received(
-            "RobotDog", namespace, track, payload
-        ),
+        on_message_received=collaborator_on_message_received,
     )
 
     print(collaborator.register_agent_attribute(collaborator_id, ["声光驱离"]))
