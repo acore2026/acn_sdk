@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from acn_sdk.models import TaskExecutionRequest
+from acn_sdk.models import AgentInfo, TaskExecutionRequest
 from acn_sdk.network.http_client import HttpClient
 from acn_sdk.network.websocket_client import WebSocketClient
 from acn_sdk.sdk import AcnSDK
@@ -63,6 +63,28 @@ def test_http_client_logs_pretty_json_for_request_and_response(caplog) -> None:
     assert '"nested": {' in caplog.text
     assert '"beta": [\n      1,\n      2\n    ]' in caplog.text
     assert "HTTP response /acn-agent/v1/task-executions" in caplog.text
+
+
+def test_sdk_logs_descriptive_messages_without_echoing_http_response(caplog, sdk_environment) -> None:
+    sdk = AcnSDK(agent_name="AliceAgent")
+
+    caplog.set_level("INFO")
+    result, agent_id = sdk.register_agent_info(
+        AgentInfo(
+            name="AliceAgent",
+            owner="+8613800138000",
+            description="demo agent",
+            priority=1,
+        )
+    )
+
+    assert result is True
+    assert agent_id.startswith("did:acn:agent:")
+    assert "Agent registered. agent_id=" in caplog.text
+    assert not any(
+        record.name == "AcnSDK" and ("response=" in record.message or "result=\n" in record.message)
+        for record in caplog.records
+    )
 
 
 def test_websocket_client_logs_pretty_json_for_send_and_receive(caplog, monkeypatch) -> None:

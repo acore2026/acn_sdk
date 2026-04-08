@@ -152,7 +152,7 @@ class AcnSDK:
                 priority=agent_info.priority,
                 metadata=agent_info.metadata,
             )
-            self._logger.info("Agent registered. agent_id=%s response=\n%s", agent_id, format_json_for_log(response))
+            self._logger.info("Agent registered. agent_id=%s", agent_id)
             return (True, agent_id)
         except Exception as exc:
             self._logger.exception("Failed to register agent info for agent=%s.", agent_info.name)
@@ -199,7 +199,7 @@ class AcnSDK:
                 content=payload.model_dump(mode="json"),
             )
             response = self.http_client.register_agent_attribute(payload)
-            self._logger.info("Robot attribute registered. response=\n%s", format_json_for_log(response))
+            self._logger.info("Robot attribute registered. agent_id=%s", agent_id)
             return (True, self._stringify_result(response))
         except Exception as exc:
             self._logger.exception("Failed to register robot attribute for agent_id=%s.", agent_id)
@@ -226,7 +226,7 @@ class AcnSDK:
             local_agent_id = self.identity_manager.agent_id
             if local_agent_id == agent_id:
                 result = self._build_local_agent_info()
-                self._logger.info("Queried local agent info agent_id=%s result=\n%s", agent_id, format_json_for_log(result))
+                self._logger.info("Queried local agent info agent_id=%s", agent_id)
                 return (True, self._stringify_result(result))
 
             if self.http_client is None:
@@ -242,7 +242,7 @@ class AcnSDK:
                 content=request.model_dump(mode="json"),
             )
             response = self.http_client.query_agent_info(request)
-            self._logger.info("Queried remote agent info agent_id=%s result=\n%s", agent_id, format_json_for_log(response))
+            self._logger.info("Queried remote agent info agent_id=%s", agent_id)
             return (True, self._stringify_result(response))
         except Exception as exc:
             self._logger.exception("Failed to query agent info for agent_id=%s.", agent_id)
@@ -265,7 +265,7 @@ class AcnSDK:
                 content=request.model_dump(mode="json"),
             )
             response = self.http_client.query_agent_list(request)
-            self._logger.info("Queried agent list owner=%s result=\n%s", owner_name, format_json_for_log(response))
+            self._logger.info("Queried agent list owner=%s", owner_name)
             return (True, self._stringify_result(response))
         except Exception as exc:
             self._logger.exception("Failed to query agent list for owner=%s.", owner_name)
@@ -315,7 +315,7 @@ class AcnSDK:
                     disconnection_message
                 )
             self._clear_identity_and_network_state(clear_task_registry=True)
-            self._logger.info("Robot deregistered. response=\n%s", format_json_for_log(response))
+            self._logger.info("Robot deregistered. agent_id=%s", agent_id)
             return (True, self._stringify_result(response))
         except Exception as exc:
             self._logger.exception("Failed to deregister robot agent_id=%s.", agent_id)
@@ -453,7 +453,7 @@ class AcnSDK:
                 "published_tracks": set(),
                 "subscribed_tracks": set(),
             }
-            self._logger.info("Task execution requested. task_id=%s response=\n%s", task_id, format_json_for_log(response))
+            self._logger.info("Task execution requested. task_id=%s", task_id)
             return (True, task_id)
         except Exception as exc:
             self._logger.exception("Failed to request task execution for agent_id=%s.", agent_id)
@@ -492,7 +492,7 @@ class AcnSDK:
             self._stop_task_tracks(task_id)
             if task_id in self._task_registry:
                 self._task_registry[task_id]["status"] = TASK_TERMINATED
-            self._logger.info("Task termination requested. task_id=%s response=\n%s", task_id, format_json_for_log(response))
+            self._logger.info("Task termination requested. task_id=%s", task_id)
             return (True, self._stringify_result(response))
         except Exception as exc:
             self._logger.exception("Failed to request task termination for task_id=%s.", task_id)
@@ -597,7 +597,7 @@ class AcnSDK:
                 task_id=task_id,
             )
             response = self.http_client.request_task_collaboration(request)
-            self._logger.info("Task collaboration requested. task_id=%s response=\n%s", task_id, format_json_for_log(response))
+            self._logger.info("Task collaboration requested. task_id=%s", task_id)
             return (True, self._stringify_result(response))
         except Exception as exc:
             self._logger.exception("Failed to request task collaboration for task_id=%s.", task_id)
