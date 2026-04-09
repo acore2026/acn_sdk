@@ -1,207 +1,62 @@
 # ACN SDK
 
-ACN SDK 是运行在机器人端侧的 Python 组件，用于与核心网侧 `AcnAgent` 和 `AgentGW` 通信。本项目当前只实现 SDK 侧能力，核心网相关部件通过 FastAPI 打桩模拟。SDK 的所有 HTTP 请求统一发送到 `AcnAgent`，由 `AcnAgent` 转发到 `ARF` 或直接处理。
+ACN SDK 是机器人端的 Python 组件，用于和核心网侧的 `AcnAgent`、`AgentGW`、`ARF` 以及 `MOQ Relay` 联调。当前仓库只实现 SDK 侧能力，核心网相关部件通过本地 mock 服务模拟。
 
-当前版本已将 SDK 包名统一为 `acn_sdk`，并按业务域进行垂直拆分：
+## 入口
 
-- `acn_sdk/identity`：身份管理
-- `acn_sdk/network`：HTTP、WebSocket、MoQ 网络通信
-- `acn_sdk/credential`：能力凭证签发
-- `acn_sdk/task`：任务管理
-- `acn_sdk/core/sdk.py`：主编排入口
-- `acn_sdk/core/settings.py`：配置模型与默认值定义
+- `acn_sdk/sdk.py`：`AcnSDK` 聚合入口
+- `acn_sdk/core/`：配置、模型、状态常量和服务实现
+- `examples/`：演示脚本
+- `mock/`：本地 mock 服务
+- `docs/`：快速开始、架构和 API 文档
 
-## 项目结构
+## Demo
 
-```text
-acn-sdk/
-├── acn_sdk/
-│   ├── __init__.py
-│   ├── core/
-│   │   ├── __init__.py
-│   │   ├── settings.py
-│   │   ├── models.py
-│   │   └── sdk.py
-│   ├── utils/
-│   │   ├── __init__.py
-│   │   ├── crypto.py
-│   │   ├── logging_config.py
-│   │   └── logging_utils.py
-│   ├── credential/
-│   │   ├── __init__.py
-│   │   └── credential_issuer.py
-│   ├── identity/
-│   │   ├── __init__.py
-│   │   └── identity_manager.py
-│   ├── network/
-│   │   ├── __init__.py
-│   │   ├── http_client.py
-│   │   ├── moq_client.py
-│   │   └── websocket_client.py
-│   ├── reporting/
-│   │   ├── __init__.py
-│   │   └── pipeline_log_reporter.py
-│   └── task/
-│       ├── __init__.py
-│       └── task_manager.py
-│   └── config/
-│       └── config.yaml
-├── mock/
-│   ├── mock_acn_agent.py
-│   ├── mock_arf.py
-│   ├── mock_agent_gw.py
-│   └── mock_moq_relay.py
-├── docs/
-│   ├── API.md
-│   ├── ARCHITECTURE.md
-│   └── QUICK_START.md
-├── examples/
-│   ├── demo_identity_flow.py
-│   ├── demo_task_flow.py
-│   ├── demo_task_flow_realtime.py
-│   ├── demo_task_initiator.py
-│   ├── demo_task_collaborator.py
-│   ├── demo_task_initiator_realtime.py
-│   └── demo_task_collaborator_realtime.py
-├── scripts/
-│   ├── start_mock_moq_relay.sh
-│   └── start_sdk_demo.sh
-├── tests/
-│   ├── conftest.py
-│   └── test_identity_flow.py
-├── pyproject.toml
-└── requirements.txt
-```
+- `examples/demo_identity_flow.py`：身份申请、能力注册、查询、去注册
+- `examples/demo_task_flow.py`：单进程双 SDK 联调版，使用 `/debug/*` 注入中间消息
+- `examples/demo_task_initiator.py` + `examples/demo_task_collaborator.py`：两终端联调版，共享 runtime 目录
+- `examples/demo_task_flow_realtime.py`：单进程 realtime 版，不使用 `/debug/*`
+- `examples/demo_task_initiator_realtime.py` + `examples/demo_task_collaborator_realtime.py`：两终端 realtime 版，不使用 `/debug/*`
 
-## 功能范围
-
-- 机器人身份申请与本地持久化
-- 能力 VC 模拟签发与注册，由 `AcnAgent` 转发到 `ARF`
-- 机器人身份查询
-- 机器人去注册
-- 入网、任务执行、任务终止、协同请求、协同接受、任务启动
-- HTTP/WebSocket/MoQ/TaskManager 组件封装
-- 本地 `AcnAgent` + `AgentGW` + `MOQ Relay` mock 联调
-- 关键消息与状态转换日志记录
-- FastAPI 打桩测试
+`examples/demo_task_shared.py` 是两终端 demo 的辅助脚本，不是直接运行入口。
 
 ## 快速开始
 
-Linux/Ubuntu 一键演示：
+最省事的方式是直接运行一键脚本：
 
 ```bash
 chmod +x scripts/start_sdk_demo.sh
 ./scripts/start_sdk_demo.sh
 ```
 
-手工运行：
+如果只想启动 mock 服务：
 
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-pip install -e .
-python3 mock/mock_arf.py --host 127.0.0.1 --port 9001
-python3 mock/mock_acn_agent.py --host 127.0.0.1 --port 9010 --arf-host 127.0.0.1 --arf-port 9001
-python3 mock/mock_agent_gw.py --host 127.0.0.1 --port 9002
-python3 mock/mock_moq_relay.py --host 127.0.0.1 --port 9003 --cache-dir data/moq-relay-cache
-python3 examples/demo_identity_flow.py
-python3 examples/demo_task_flow.py
-python3 examples/demo_task_flow_realtime.py
-python3 examples/demo_task_collaborator.py
-python3 examples/demo_task_initiator.py
-python3 examples/demo_task_initiator_realtime.py
-python3 examples/demo_task_collaborator_realtime.py
+chmod +x scripts/start_mock_services.sh
+./scripts/start_mock_services.sh
 ```
 
-推荐启动顺序：
-
-1. 安装依赖并执行 `pip install -e .`
-2. 启动 `python3 mock/mock_arf.py --host 127.0.0.1 --port 9001`
-3. 启动 `python3 mock/mock_acn_agent.py --host 127.0.0.1 --port 9010 --arf-host 127.0.0.1 --arf-port 9001`
-4. 启动 `python3 mock/mock_agent_gw.py --host 127.0.0.1 --port 9002`
-5. 启动 `python3 mock/mock_moq_relay.py --host 127.0.0.1 --port 9003 --cache-dir data/moq-relay-cache`
-6. 运行 `python3 examples/demo_identity_flow.py`、`python3 examples/demo_task_flow.py`、`python3 examples/demo_task_flow_realtime.py`、`python3 examples/demo_task_collaborator.py`、`python3 examples/demo_task_initiator.py`、`python3 examples/demo_task_initiator_realtime.py`、`python3 examples/demo_task_collaborator_realtime.py` 或 `pytest`
-
-Windows + PyCharm：
-
-1. 使用 PyCharm 打开项目根目录 `/home/acn/zxy` 对应工程副本。
-2. 创建 Python 3.10+ 虚拟环境。
-3. 安装 `requirements.txt`，并执行 `pip install -e .`。
-4. 新建 `python mock/mock_arf.py --host 127.0.0.1 --port 9001` 运行配置。
-5. 新建 `python mock/mock_acn_agent.py --host 127.0.0.1 --port 9010 --arf-host 127.0.0.1 --arf-port 9001` 运行配置。
-6. 新建 `python mock/mock_agent_gw.py --host 127.0.0.1 --port 9002` 运行配置。
-7. 新建 `python mock/mock_moq_relay.py --host 127.0.0.1 --port 9003 --cache-dir data/moq-relay-cache` 运行配置。
-8. 新建 `examples/demo_identity_flow.py`、`examples/demo_task_flow.py`、`examples/demo_task_flow_realtime.py`、`examples/demo_task_collaborator.py`、`examples/demo_task_initiator.py`、`examples/demo_task_initiator_realtime.py` 和 `examples/demo_task_collaborator_realtime.py` 运行配置。
-9. 先启动四个 mock 服务，再运行示例或测试。
-
-`examples/demo_task_flow.py` 当前会启动两个 SDK 实例：
-
-- `AliceAgent`：发起任务、请求协同、发布 `Location` track
-- `RobotDog`：接受协同、订阅 `Location` track、接收真实 MOQ relay 转发的对象
-
-`examples/demo_task_flow_realtime.py` 是不打桩中间消息的联调版，会等待真实 `TASK_REQUEST_COLLABORATION`、`DISCOVER_RESULT`、`START_TASK` 和 `SUBSCRIBE_TRACK` 消息流入，适合接外部核心网组件。
-
-如果想在两个终端分别运行两个机器人，使用：
+或者直接运行 Python 入口：
 
 ```bash
-python3 examples/demo_task_collaborator.py
-python3 examples/demo_task_initiator.py
+python3 mock/start_mock_services.py
 ```
 
-建议先启动 collaborator，再启动 initiator。两个脚本默认共享 `/tmp/acn-sdk-task-demo/demo-task-flow` 作为运行目录，也支持通过 `--runtime-root` 和 `--session-name` 覆盖。
-
-如果要接真实核心网联调，使用：
+如果你已经安装了 mock wheel，也可以直接用命令：
 
 ```bash
-python3 examples/demo_task_collaborator_realtime.py
-python3 examples/demo_task_initiator_realtime.py
+start-mock-services
 ```
 
-这两个脚本不会通过 `/debug/*` 注入中间消息，只依赖真实 AgentGW / ARF / MOQ 组件下发的消息流。
-
-真实联调成功时，终端会出现类似输出：
-
-```text
-[RobotDog] callback message_type=MOQ_OBJECT payload={'namespace': '/task-xxxxx/did:acn:agent:...', 'track': 'Location', 'message_info': b'2026-03-30T00:00:00Z'}
-```
-
-如果不做 `pip install -e .`，则需要把项目根目录标记为 `Sources Root`。
-
-示例导入方式：
-
-```python
-from acn_sdk import AcnSDK, AgentInfo
-
-sdk = AcnSDK(agent_name="AliceAgent")
-result, agent_id = sdk.register_agent_info(agent_info)
-```
-
-`AcnSDK` 对机器人暴露的公共接口现统一返回 `Tuple`：第一个元素为 `bool` 型 `result`，后续元素为业务结果或错误信息。
-
-当前配置文件 [config.yaml](/home/acn/zxy/acn_sdk/config/config.yaml) 已调整为：
-
-- 网端信息：`network_ip=127.0.0.1`、`acn_agent_port=9010`、`arf_port=9001`、`agent_gw_ws_port=9002`、`agent_gw_moq_port=9003`、`web_ui_port=9004`
-- 配置实现位于 `acn_sdk/core/settings.py`
-- 运行时优先读取 `acn_sdk/config/config.yaml`；修改后可在代码里调用 `sdk.reload_config()` 立即重载
-
-## 测试
-
-```bash
-pytest
-```
-
-当前主流程已经通过本地自动化测试验证：
-
-- SDK 初始化时自动生成并保存 EC 公私钥
-- 身份注册会持久化 `agent_id` 和 `vc0`，请求体中的 `signature` 仅基于 `timestamp` 生成，编码采用 `base64`
-- 能力注册会生成多个能力 VC，并按 `vc_list` 发送到 `/arf/v1/agent-cards`，SDK 仍然通过 `AcnAgent` 的 HTTP 入口发起请求，由 `AcnAgent` 转发到 `ARF`，请求体字段顺序为 `agent_id`、`priority`、`timestamp`、`signature`、`signature_encoding`、`vc_list`
-- 去注册只清理身份状态，不删除本地密钥，请求体中的 `signature` 仅基于 `timestamp` 生成，编码采用 `base64`
-
-接口请求约定与最新示例以 [docs/API.md](docs/API.md) 为准。
+更完整的步骤见 [docs/QUICK_START.md](docs/QUICK_START.md)。
 
 ## 文档
 
-- [快速开始](docs/QUICK_START.md)
-- [架构设计](docs/ARCHITECTURE.md)
-- [接口文档](docs/API.md)
+- [Quick Start](docs/QUICK_START.md)
+- [Architecture](docs/ARCHITECTURE.md)
+- [API](docs/API.md)
+
+## 验证
+
+- `pytest -q`
+- `python3 -m py_compile examples/*.py`

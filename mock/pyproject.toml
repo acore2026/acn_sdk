@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "acn-sdk-mock"
+version = "0.1.0"
+description = "Local mock services for ACN SDK"
+requires-python = ">=3.10"
+dependencies = [
+    "acn-sdk>=0.1.0",
+]
+
+[project.scripts]
+start-mock-services = "mock.start_mock_services:main"
+mock-arf = "mock.mock_arf:main"
+mock-acn-agent = "mock.mock_acn_agent:main"
+mock-agent-gw = "mock.mock_agent_gw:main"
+mock-moq-relay = "mock.mock_moq_relay:main"
+
+[tool.setuptools.packages.find]
+include = ["mock*"]

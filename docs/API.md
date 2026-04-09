@@ -13,7 +13,7 @@
 包结构：
 
 ```text
-acn_sdk.core.sdk.AcnSDK
+acn_sdk.sdk.AcnSDK
 acn_sdk.identity.identity_manager.IdentityManager
 acn_sdk.network.http_client.HttpClient
 acn_sdk.network.websocket_client.WebSocketClient
@@ -114,7 +114,8 @@ POST /arf/v1/agent-cards
 - 原始需求中出现 `agent—cards`，其中连接符疑似排版字符；工程中统一采用标准路径 `/arf/v1/agent-cards`。
 - 调用前会校验传入的 `agent_id` 必须与本机已注册身份一致，否则直接抛出 `ValueError`
 - 只有当 HTTP 响应状态码为 `200` 时，接口才返回 `True`
-- 当前请求体包含 `agent_id`、`timestamp`、`signature`、`signature_encoding`、`vc_list`
+- 当前请求体包含 `agent_id`、`priority`、`timestamp`、`signature`、`signature_encoding`、`vc_list`
+- `priority` 取自本地已保存的 `AgentInfo.priority`
 - `signature` 仅基于 `timestamp` 生成，编码采用 `base64`
 - `vc_list` 中第一个元素为 `vc0`，后续元素为全部能力 VC
 - 当前能力 VC 使用 `BindingSIMCredential`，签名按能力名称自动分流：`可疑人员识别` 和 `目标跟踪` 使用华为发放者及 `Huawei_private_key.pem`，其他能力使用 RobotFactory 发放者及 `Robot_Factory_private_key.pem`
@@ -124,6 +125,7 @@ POST /arf/v1/agent-cards
 ```json
 {
   "agent_id": "did:acn:agent:987654321",
+  "priority": 5,
   "timestamp": "2026-03-27T10:00:00Z",
   "signature": "base64-signature",
   "signature_encoding": "base64",
@@ -169,9 +171,9 @@ POST /arf/v1/agent-cards
 }
 ```
 
-### `query_agent_id(robot_name: str, owner: str) -> tuple[bool, str]`
+### `query_agent_id(agent_name: str, owner: str) -> tuple[bool, str]`
 
-本地查询当前设备保存的身份信息，命中则返回 `(True, agent_id)`，未命中返回 `(False, None)`。
+本地查询当前设备保存的身份信息，命中则返回 `(True, agent_id)`，未命中返回 `(False, "")`。
 
 ### `deregister_agent(agent_id: str, reason: str) -> tuple[bool, str]`
 
@@ -189,6 +191,7 @@ POST /acn-agent/v1/agent-deletions
 - 关闭 HTTP/WebSocket/MoQ 连接
 - 停止全部任务
 - `signature` 仅基于 `timestamp` 生成，编码采用 `base64`
+- 不删除本地密钥文件
 
 ### `join_network(agent_id: str) -> tuple[bool, str]`
 
@@ -364,10 +367,9 @@ python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 pip install -e .
-python3 mock/mock_acn_agent.py --host 127.0.0.1 --port 9010
-python3 mock/mock_arf.py --host 127.0.0.1 --port 9001
-python3 mock/mock_agent_gw.py --host 127.0.0.1 --port 9002
-python3 mock/mock_moq_relay.py --host 127.0.0.1 --port 9003 --cache-dir data/moq-relay-cache
+chmod +x scripts/start_mock_services.sh
+./scripts/start_mock_services.sh
+python3 mock/start_mock_services.py
 python3 examples/demo_identity_flow.py
 python3 examples/demo_task_flow.py
 pytest
@@ -377,13 +379,11 @@ pytest
 
 1. `pip install -r requirements.txt`
 2. `pip install -e .`
-3. `python3 mock/mock_acn_agent.py --host 127.0.0.1 --port 9010`
-4. `python3 mock/mock_arf.py --host 127.0.0.1 --port 9001`
-5. `python3 mock/mock_agent_gw.py --host 127.0.0.1 --port 9002`
-6. `python3 mock/mock_moq_relay.py --host 127.0.0.1 --port 9003 --cache-dir data/moq-relay-cache`
-7. `python3 examples/demo_identity_flow.py`
-8. `python3 examples/demo_task_flow.py`
-9. `pytest -q`
+3. `chmod +x scripts/start_mock_services.sh`
+4. `./scripts/start_mock_services.sh` or `python3 mock/start_mock_services.py`
+5. `python3 examples/demo_identity_flow.py`
+6. `python3 examples/demo_task_flow.py`
+7. `pytest -q`
 
 `demo_task_flow.py` 的当前校验目标：
 
@@ -396,7 +396,7 @@ PyCharm 调测：
 1. 打开项目根目录。
 2. 解释器选择 Python 3.10+。
 3. 安装 `requirements.txt`，并执行 `pip install -e .`。
-4. 创建 `python mock/mock_acn_agent.py --host 127.0.0.1 --port 9010` 配置。
+4. 创建 `python mock/mock_acn_agent.py --host 127.0.0.1 --port 9010 --arf-host 127.0.0.1 --arf-port 9001` 配置。
 5. 创建 `examples/demo_identity_flow.py` 配置。
 6. 先启动 mock 服务，再启动示例或测试。
 7. 如果你修改了 `acn_sdk/config/config.yaml`，在调试会话里直接调用 `sdk.reload_config()` 即可重新读取配置。

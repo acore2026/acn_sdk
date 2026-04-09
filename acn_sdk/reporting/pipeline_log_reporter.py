@@ -50,15 +50,16 @@ class PipelineLogReporter:
             with self._lock:
                 self._session.post("/acn/v3/pipeline-logs", json=payload, headers={"Content-Type": "application/json"})
         except Exception as exc:
-            self._logger.warning(
-                "Failed to report pipeline log source=%s destination=%s protocol=%s method=%s url=%s error=%s",
-                source,
-                destination,
-                protocol,
-                method,
-                url,
-                exc,
-            )
+            pass
+            # self._logger.warning(
+            #     "Failed to report pipeline log source=%s destination=%s protocol=%s method=%s url=%s error=%s",
+            #     source,
+            #     destination,
+            #     protocol,
+            #     method,
+            #     url,
+            #     exc,
+            # )
 
     def close(self) -> None:
         self._session.close()

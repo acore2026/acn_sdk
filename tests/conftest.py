@@ -9,7 +9,7 @@ from uuid import uuid4
 import pytest
 
 from acn_sdk.core.settings import SDKConfig
-import acn_sdk.core.sdk as sdk_module
+import acn_sdk.sdk as sdk_module
 from acn_sdk.network.http_client import HttpClient
 
 

@@ -1,4 +1,4 @@
-from .core.sdk import AcnSDK
+from .sdk import AcnSDK
 from .core.models import AgentInfo
 from .core.settings import SDKConfig
 

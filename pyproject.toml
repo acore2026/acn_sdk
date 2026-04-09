@@ -30,4 +30,14 @@ testpaths = ["tests"]
 pythonpath = ["."]
 
 [tool.setuptools.packages.find]
-include = ["acn_sdk*"]
+include = ["acn_sdk*", "moq*"]
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.package-data]
+"acn_sdk" = [
+    "config/config.yaml",
+    "credential/cert/*.crt",
+    "credential/cert/*.pem",
+]
