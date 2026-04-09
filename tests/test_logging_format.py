@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from acn_sdk.models import AgentInfo, TaskExecutionRequest
+from acn_sdk.core.models import AgentInfo, TaskExecutionRequest
 from acn_sdk.network.http_client import HttpClient
 from acn_sdk.network.websocket_client import WebSocketClient
-from acn_sdk.sdk import AcnSDK
+from acn_sdk.core.sdk import AcnSDK
 
 
 class FakeHttpResponse:

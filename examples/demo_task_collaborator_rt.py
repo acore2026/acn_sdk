@@ -10,7 +10,7 @@ sys.path.insert(0, str(SCRIPT_DIR.parent))
 
 from acn_sdk import AcnSDK, AgentInfo
 
-CONFIG_PATH = Path(__file__).resolve().parent.parent / "config" / "config.yaml"
+CONFIG_PATH = Path(__file__).resolve().parent.parent / "acn_sdk" / "config" / "config.yaml"
 DEFAULT_WAIT_TIMEOUT_SECONDS = 120.0
 
 

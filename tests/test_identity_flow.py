@@ -17,10 +17,10 @@ from acn_sdk.credential.credential_issuer import (
     CredentialIssuer,
     HUAWEI_ISSUER_DID,
 )
-from acn_sdk.models import AgentInfo
-from acn_sdk.crypto import ensure_ec_keypair, sign_payload
+from acn_sdk.core.models import AgentInfo
+from acn_sdk.utils.crypto import ensure_ec_keypair, sign_payload
 from acn_sdk.network.http_client import HttpClient
-from acn_sdk.sdk import AcnSDK
+from acn_sdk.core.sdk import AcnSDK
 from acn_sdk.network.moq_client import MoQClient
 
 

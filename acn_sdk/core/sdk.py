@@ -8,30 +8,30 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from .config import SDKConfig
-from .credential.credential_issuer import CredentialIssuer
-from .crypto import ensure_ec_keypair, load_public_key_pem, sign_timestamp
-from .identity.identity_manager import IdentityManager
-from .logging_config import setup_logging
-from .logging_utils import format_json_for_log
-from .reporting.pipeline_log_reporter import PipelineLogReporter
+from .settings import SDKConfig
 from .models import (
     AgentCardRequest,
     AgentDiscoveryRequest,
+    AgentInfo,
     AgentInfoQueryRequest,
     DeregisterRequest,
-    AgentInfo,
     OwnerAgentsQueryRequest,
     TaskExecutionRequest,
     TaskTerminationRequest,
     WebSocketMessage,
 )
-from .network.http_client import HttpClient
-from .network.moq_client import MoQClient
-from .network.websocket_client import WebSocketClient
-from .task.task_manager import TaskManager
+from ..credential.credential_issuer import CredentialIssuer
+from ..identity.identity_manager import IdentityManager
+from ..reporting.pipeline_log_reporter import PipelineLogReporter
+from ..task.task_manager import TaskManager
+from ..network.http_client import HttpClient
+from ..network.moq_client import MoQClient
+from ..network.websocket_client import WebSocketClient
+from ..utils.crypto import ensure_ec_keypair, load_public_key_pem, sign_timestamp
+from ..utils.logging_config import setup_logging
+from ..utils.logging_utils import format_json_for_log
 
-DEFAULT_CONFIG_PATH = Path(__file__).resolve().parent.parent / "config" / "config.yaml"
+DEFAULT_CONFIG_PATH = Path(__file__).resolve().parents[1] / "config" / "config.yaml"
 NETWORK_ONLINE = "online"
 NETWORK_OFFLINE = "offline"
 TASK_PROCESSING = "Processing"

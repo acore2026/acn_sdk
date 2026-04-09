@@ -8,8 +8,8 @@ ACN SDK 是运行在机器人端侧的 Python 组件，用于与核心网侧 `Ac
 - `acn_sdk/network`：HTTP、WebSocket、MoQ 网络通信
 - `acn_sdk/credential`：能力凭证签发
 - `acn_sdk/task`：任务管理
-- `acn_sdk/sdk.py`：主编排入口
-- `acn_sdk/config.py`：配置模型与默认值定义
+- `acn_sdk/core/sdk.py`：主编排入口
+- `acn_sdk/core/settings.py`：配置模型与默认值定义
 
 ## 项目结构
 
@@ -17,11 +17,16 @@ ACN SDK 是运行在机器人端侧的 Python 组件，用于与核心网侧 `Ac
 acn-sdk/
 ├── acn_sdk/
 │   ├── __init__.py
-│   ├── sdk.py
-│   ├── config.py
-│   ├── crypto.py
-│   ├── logging_config.py
-│   ├── models.py
+│   ├── core/
+│   │   ├── __init__.py
+│   │   ├── settings.py
+│   │   ├── models.py
+│   │   └── sdk.py
+│   ├── utils/
+│   │   ├── __init__.py
+│   │   ├── crypto.py
+│   │   ├── logging_config.py
+│   │   └── logging_utils.py
 │   ├── credential/
 │   │   ├── __init__.py
 │   │   └── credential_issuer.py
@@ -33,16 +38,19 @@ acn-sdk/
 │   │   ├── http_client.py
 │   │   ├── moq_client.py
 │   │   └── websocket_client.py
+│   ├── reporting/
+│   │   ├── __init__.py
+│   │   └── pipeline_log_reporter.py
 │   └── task/
 │       ├── __init__.py
 │       └── task_manager.py
+│   └── config/
+│       └── config.yaml
 ├── mock/
 │   ├── mock_acn_agent.py
 │   ├── mock_arf.py
 │   ├── mock_agent_gw.py
 │   └── mock_moq_relay.py
-├── config/
-│   └── config.yaml
 ├── docs/
 │   ├── API.md
 │   ├── ARCHITECTURE.md
@@ -171,11 +179,11 @@ result, agent_id = sdk.register_agent_info(agent_info)
 
 `AcnSDK` 对机器人暴露的公共接口现统一返回 `Tuple`：第一个元素为 `bool` 型 `result`，后续元素为业务结果或错误信息。
 
-当前配置文件 [config.yaml](/home/acn/zxy/config/config.yaml) 已调整为：
+当前配置文件 [config.yaml](/home/acn/zxy/acn_sdk/config/config.yaml) 已调整为：
 
 - 网端信息：`network_ip=127.0.0.1`、`acn_agent_port=9010`、`arf_port=9001`、`agent_gw_ws_port=9002`、`agent_gw_moq_port=9003`、`web_ui_port=9004`
-- `acn_sdk/config.py` 只提供配置模型和默认值，不是运行时入口
-- 运行时优先读取 `config/config.yaml`；修改后可在代码里调用 `sdk.reload_config()` 立即重载
+- 配置实现位于 `acn_sdk/core/settings.py`
+- 运行时优先读取 `acn_sdk/config/config.yaml`；修改后可在代码里调用 `sdk.reload_config()` 立即重载
 
 ## 测试
 

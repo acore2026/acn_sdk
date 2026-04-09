@@ -7,7 +7,7 @@ from fastapi import FastAPI
 from pydantic import BaseModel
 import uvicorn
 
-from acn_sdk.logging_config import setup_logging
+from acn_sdk.utils.logging_config import setup_logging
 
 
 setup_logging()

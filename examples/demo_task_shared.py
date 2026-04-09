@@ -10,12 +10,12 @@ from typing import Any
 
 import httpx
 
-from acn_sdk.config import SDKConfig
+from acn_sdk.core.settings import SDKConfig
 
 DEFAULT_RUNTIME_ROOT = Path(tempfile.gettempdir()) / "acn-sdk-task-demo"
 DEFAULT_SESSION_NAME = "demo-task-flow"
 DEFAULT_AGENT_GW_BASE_URL = "http://127.0.0.1:9002"
-REPO_CONFIG_PATH = Path(__file__).resolve().parent.parent / "config" / "config.yaml"
+REPO_CONFIG_PATH = Path(__file__).resolve().parent.parent / "acn_sdk" / "config" / "config.yaml"
 DEFAULT_WAIT_TIMEOUT_SECONDS = 120.0
 
 

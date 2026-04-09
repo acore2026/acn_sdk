@@ -47,6 +47,10 @@ class SDKConfig(BaseModel):
     @classmethod
     def load(cls, path: str | Path) -> "SDKConfig":
         config_path = Path(path).expanduser().resolve()
+        if not config_path.exists() and config_path.name == "config.yaml" and config_path.parent.name == "config":
+            fallback = config_path.parent.parent / "acn_sdk" / "config" / config_path.name
+            if fallback.exists():
+                config_path = fallback.resolve()
         with config_path.open("r", encoding="utf-8") as file:
             content = yaml.safe_load(file) or {}
         config = cls.model_validate(content)

@@ -12,7 +12,7 @@ import httpx
 sys.path.append("..")
 
 from acn_sdk import AcnSDK, AgentInfo
-from acn_sdk.config import SDKConfig
+from acn_sdk.core.settings import SDKConfig
 
 
 def _post_agent_gw_debug(path: str, payload: dict) -> None:

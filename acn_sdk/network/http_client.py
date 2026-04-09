@@ -6,8 +6,7 @@ from typing import Any, Protocol
 
 import httpx
 
-from ..logging_utils import format_json_for_log
-from ..models import (
+from ..core.models import (
     AgentCardRequest,
     AgentDiscoveryRequest,
     AgentInfoQueryRequest,
@@ -16,6 +15,7 @@ from ..models import (
     TaskExecutionRequest,
     TaskTerminationRequest,
 )
+from ..utils.logging_utils import format_json_for_log
 
 
 class SupportsHttpPost(Protocol):

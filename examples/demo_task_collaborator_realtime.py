@@ -12,11 +12,11 @@ sys.path.insert(0, str(SCRIPT_DIR))
 sys.path.insert(0, str(SCRIPT_DIR.parent))
 
 from acn_sdk import AcnSDK, AgentInfo
-from acn_sdk.config import SDKConfig
+from acn_sdk.core.settings import SDKConfig
 
 DEFAULT_RUNTIME_ROOT = Path(tempfile.gettempdir()) / "acn-sdk-task-demo"
 DEFAULT_SESSION_NAME = "demo-task-flow-realtime"
-REPO_CONFIG_PATH = Path(__file__).resolve().parent.parent / "config" / "config.yaml"
+REPO_CONFIG_PATH = Path(__file__).resolve().parent.parent / "acn_sdk" / "config" / "config.yaml"
 
 
 # 运行辅助函数。

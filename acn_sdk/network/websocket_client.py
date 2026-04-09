@@ -4,7 +4,7 @@ import json
 import logging
 from typing import Any
 
-from ..logging_utils import format_json_for_log
+from ..utils.logging_utils import format_json_for_log
 
 
 class WebSocketClient:

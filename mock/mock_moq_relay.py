@@ -5,7 +5,7 @@ import asyncio
 import logging
 from pathlib import Path
 
-from acn_sdk.logging_config import setup_logging
+from acn_sdk.utils.logging_config import setup_logging
 from moq import MOQRelay
 
 

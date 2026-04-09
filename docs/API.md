@@ -13,7 +13,7 @@
 包结构：
 
 ```text
-acn_sdk.sdk.AcnSDK
+acn_sdk.core.sdk.AcnSDK
 acn_sdk.identity.identity_manager.IdentityManager
 acn_sdk.network.http_client.HttpClient
 acn_sdk.network.websocket_client.WebSocketClient
@@ -22,12 +22,12 @@ acn_sdk.credential.credential_issuer.CredentialIssuer
 acn_sdk.task.task_manager.TaskManager
 ```
 
-### `AcnSDK.__init__(agent_name: str, config_path: str | Path = "config/config.yaml")`
+### `AcnSDK.__init__(agent_name: str, config_path: str | Path = "acn_sdk/config/config.yaml")`
 
 初始化 SDK，完成以下动作：
 
 - 保存 `agent_name`
-- 自动加载 `config/config.yaml`
+- 自动加载 `acn_sdk/config/config.yaml`
 - 初始化 `IdentityManager`、`HttpClient`、`CredentialIssuer`
 - 将 `WebSocketClient`、`moq_pub_client`、`moq_sub_client`、`TaskManager` 初值设为 `None`
 - 设置网络状态为 `offline`
@@ -49,7 +49,7 @@ acn_sdk.task.task_manager.TaskManager
 
 ### `reload_config() -> tuple[bool, str]`
 
-重新读取 `config/config.yaml`（或 `config_path` 指定的文件），并刷新以下依赖：
+重新读取 `acn_sdk/config/config.yaml`（或 `config_path` 指定的文件），并刷新以下依赖：
 
 - 日志级别与日志目录
 - `IdentityManager`
@@ -331,15 +331,15 @@ POST /arf/v1/agent-discoveries
 文件路径：
 
 ```text
-config/config.yaml
+acn_sdk/config/config.yaml
 ```
 
 说明：
 
-- `config.py` 只定义配置模型和默认值
-- `config/config.yaml` 是运行时优先读取的配置源
+- `settings.py` 只定义配置模型和默认值
+- `acn_sdk/config/config.yaml` 是运行时优先读取的配置源
 - 修改 YAML 后，如需让已启动的 SDK 立即生效，调用 `reload_config()`
-- 如果要切换部署环境，只需要改 YAML，不需要改 `acn_sdk/config.py`
+- 如果要切换部署环境，只需要改 YAML，不需要改 `acn_sdk/core/settings.py`
 
 字段说明：
 
@@ -399,7 +399,7 @@ PyCharm 调测：
 4. 创建 `python mock/mock_acn_agent.py --host 127.0.0.1 --port 9010` 配置。
 5. 创建 `examples/demo_identity_flow.py` 配置。
 6. 先启动 mock 服务，再启动示例或测试。
-7. 如果你修改了 `config/config.yaml`，在调试会话里直接调用 `sdk.reload_config()` 即可重新读取配置。
+7. 如果你修改了 `acn_sdk/config/config.yaml`，在调试会话里直接调用 `sdk.reload_config()` 即可重新读取配置。
 
 如未执行 `pip install -e .`，则需要将项目根目录标记为 `Sources Root`。
 

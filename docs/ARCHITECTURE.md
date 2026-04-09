@@ -11,7 +11,7 @@
 ```text
 acn_sdk/
 ├── sdk.py
-├── config.py
+├── settings.py
 ├── models.py
 ├── crypto.py
 ├── logging_config.py
@@ -28,8 +28,8 @@ acn_sdk/
 - `network/WebSocketClient`：预留与 `AgentGW` 的长连接通信能力。
 - `network/MoQClient`：基于 `moq.pub.MOQPublisher` / `moq.sub.MOQSubscriber` 的 track 发布、订阅与对象回调入口。
 - `task/TaskManager`：统一管理后台任务生命周期。
-- `config.py`：定义 `SDKConfig` / `NetworkConfig` / `StorageConfig` 数据模型与默认值。
-- `config/config.yaml`：运行时优先读取的配置文件，修改后可通过 `AcnSDK.reload_config()` 重新加载。
+- `settings.py`：定义 `SDKConfig` / `NetworkConfig` / `StorageConfig` 数据模型与默认值。
+- `acn_sdk/config/config.yaml`：运行时优先读取的配置文件，修改后可通过 `AcnSDK.reload_config()` 重新加载。
 - `mock_acn_agent`：FastAPI 打桩服务，承载身份注册、任务执行、终止任务和去注册接口。
 - `mock_arf`：FastAPI 打桩服务，承载能力注册和协同发现接口。
 
@@ -117,9 +117,9 @@ flowchart LR
 
 ## 6. 配置设计
 
-- `config.py` 只负责配置结构与默认值，不作为运行时配置入口。
-- `config/config.yaml` 是当前工程的运行时配置源。
-- 启动时优先读取 `config/config.yaml`，运行中需要热更新时调用 `AcnSDK.reload_config()`。
+- `settings.py` 只负责配置结构与默认值，不作为运行时配置入口。
+- `acn_sdk/config/config.yaml` 是当前工程的运行时配置源。
+- 启动时优先读取 `acn_sdk/config/config.yaml`，运行中需要热更新时调用 `AcnSDK.reload_config()`。
 
 ## 7. 扩展设计
 
