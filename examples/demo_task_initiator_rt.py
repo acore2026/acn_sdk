@@ -1,10 +1,7 @@
 from __future__ import annotations
 
-import argparse
 import json
-import shutil
 import sys
-import tempfile
 import time
 import threading
 from datetime import datetime, timezone
@@ -16,40 +13,13 @@ sys.path.insert(0, str(SCRIPT_DIR))
 sys.path.insert(0, str(SCRIPT_DIR.parent))
 
 from acn_sdk import AcnSDK, AgentInfo
-from acn_sdk.config import SDKConfig
 
-DEFAULT_RUNTIME_ROOT = Path(tempfile.gettempdir()) / "acn-sdk-task-demo"
-DEFAULT_SESSION_NAME = "demo-task-flow-realtime"
-REPO_CONFIG_PATH = Path(__file__).resolve().parent.parent / "config" / "config.yaml"
+CONFIG_PATH = Path(__file__).resolve().parent.parent / "config" / "config.yaml"
 DEFAULT_WAIT_TIMEOUT_SECONDS = 120.0
 DEFAULT_SUBSCRIPTION_GRACE_PERIOD_SECONDS = 5.0
 
 
-# 运行辅助函数。
-# 这些函数让 realtime 示例保持自包含，不再依赖 demo_task_shared。
-def prepare_session_dir(runtime_root: Path, session_name: str, reset: bool = False) -> Path:
-    # 每次 realtime 运行都使用独立的 session 目录，避免不同运行之间的文件冲突。
-    session_dir = runtime_root / session_name
-    if reset and session_dir.exists():
-        shutil.rmtree(session_dir)
-    session_dir.mkdir(parents=True, exist_ok=True)
-    return session_dir
-
-
-def build_config_from_repo(base_dir: Path, identity_name: str, repo_config_path: Path = REPO_CONFIG_PATH) -> Path:
-    # 先读取仓库配置，再把存储路径改到当前 session 目录下。
-    config = SDKConfig.load(repo_config_path)
-    config.storage.identity_file = str(base_dir / identity_name / "identity.json")
-    config.storage.private_key_file = str(base_dir / identity_name / "keys" / "private.pem")
-    config.storage.public_key_file = str(base_dir / identity_name / "keys" / "public.pem")
-    config.storage.log_dir = str(base_dir / identity_name / "logs")
-    config_path = base_dir / identity_name / "config.yaml"
-    config.save(config_path)
-    return config_path
-
-
 def current_location_bytes(*, seq: int | None = None, reported_at: str | None = None) -> bytes:
-    # 组装演示期间会反复上报的定位遥测数据。
     payload = {
         "longitude": 116.404,
         "latitude": 39.915,
@@ -71,7 +41,6 @@ def report_task_info_for_duration(
     interval_seconds: float = 1.0,
     start_seq: int = 1,
 ) -> None:
-    # 在指定时长内持续发送任务遥测数据。
     seq = start_seq
     deadline = time.monotonic() + duration_seconds
     while True:
@@ -89,34 +58,14 @@ def report_task_info_for_duration(
         time.sleep(interval_seconds)
 
 
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Run the initiator side without stubbing intermediate messages.")
-    parser.add_argument("--runtime-root", type=Path, default=DEFAULT_RUNTIME_ROOT)
-    parser.add_argument("--session-name", default=DEFAULT_SESSION_NAME)
-    parser.add_argument("--wait-timeout", type=float, default=DEFAULT_WAIT_TIMEOUT_SECONDS)
-    parser.add_argument(
-        "--subscription-grace-period",
-        type=float,
-        default=DEFAULT_SUBSCRIPTION_GRACE_PERIOD_SECONDS,
-        help="Seconds to wait after collaboration is accepted before sending sustained task reports.",
-    )
-    parser.add_argument("--report-duration", type=float, default=10.0)
-    return parser.parse_args()
-
-
 def main() -> None:
-    args = parse_args()
-    session_dir = prepare_session_dir(args.runtime_root, args.session_name, reset=False)
-    print(f"session_dir={session_dir}")
-
-    # 第 1 步：在 session 目录中创建 initiator 的运行配置。
-    initiator_config = build_config_from_repo(session_dir, identity_name="initiator")
+    # 第 1 步：直接读取仓库里的固定配置，不再创建 session 目录或重写配置文件。
     initiator = AcnSDK(
         agent_name="AliceAgent",
-        config_path=initiator_config,
+        config_path=CONFIG_PATH,
     )
 
-    # 第 2 步：注册 agent，并确认 SDK 返回的身份信息。
+    # 第 2 步：注册 initiator 身份，并确认本地 agent 信息可用。
     initiator_ok, initiator_id = initiator.register_agent_info(
         AgentInfo(
             name="AliceAgent",
@@ -135,11 +84,10 @@ def main() -> None:
     task_id_holder: dict[str, str] = {"value": ""}
     discover_result_received = threading.Event()
 
-    # 这个回调在 collaborator 发起协同时触发，用来接收任务请求。
+    # 第 3 步：注册回调，按任务协同流程推进 initiator 侧状态。
     def initiator_on_task_collaboration_request(payload: dict) -> None:
         print(f"[AliceAgent] on_task_collaboration_request payload={payload}")
 
-    # 这个回调是关键交接点：当发现结果返回后，选出 collaborator 并启动协同任务。
     def initiator_on_discover_result_received(payload: dict) -> None:
         print(f"[AliceAgent] on_discover_result_received payload={payload}")
         collaborator_candidates = payload.get("discover_result", [])
@@ -156,15 +104,12 @@ def main() -> None:
         )
         discover_result_received.set()
 
-    # 这个回调用来记录协同流程中返回的启动命令。
     def initiator_on_task_start_command(payload: dict) -> None:
         print(f"[AliceAgent] on_task_start_command payload={payload}")
 
-    # 打印 MQTT/MoQ 载荷，方便在终端里观察 realtime 数据流。
     def initiator_on_message_received(namespace: str, track: str, payload: bytes) -> None:
         print(f"moq_message namespace={namespace} track={track} payload={payload!r}")
 
-    # 第 3 步：注册驱动整个事件序列的回调函数。
     initiator.register_callbacks(
         on_task_collaboration_request=initiator_on_task_collaboration_request,
         on_discover_result_received=initiator_on_discover_result_received,
@@ -172,11 +117,11 @@ def main() -> None:
         on_message_received=initiator_on_message_received,
     )
 
-    # 第 4 步：上报能力并加入网络，然后再申请任务。
+    # 第 4 步：先发布能力，再加入网络，等待外部发起任务协同。
     print(initiator.register_agent_attribute(initiator_id, ["可疑人员识别", "目标跟踪"]))
     print(f"initiator join={initiator.join_network(initiator_id)}")
 
-    # 第 5 步：申请任务，并立刻发送第一条定位样本，让任务一开始就有实时数据。
+    # 第 5 步：申请任务，并先发一条定位样本，让协同流程尽快进入可观测状态。
     task_ok, task_id = initiator.request_task_execution(initiator_id, "可疑人员驱离")
     if not task_ok:
         raise RuntimeError(task_id)
@@ -192,23 +137,23 @@ def main() -> None:
         )
     )
 
-    # 第 6 步：请求协同，并等待 discovery 回调把流程推进到下一阶段。
+    # 第 6 步：请求协同，等待 collaborator 侧回传 discover 结果后继续推进。
     print(initiator.request_task_collaboration(initiator_id, task_id, ["声光驱离"]))
-    if not discover_result_received.wait(args.wait_timeout):
+    if not discover_result_received.wait(DEFAULT_WAIT_TIMEOUT_SECONDS):
         raise RuntimeError("Timed out waiting for DISCOVER_RESULT.")
-    time.sleep(args.subscription_grace_period)
+    time.sleep(DEFAULT_SUBSCRIPTION_GRACE_PERIOD_SECONDS)
 
-    # 第 7 步：在 collaborator 活跃期间持续上报遥测数据。
+    # 第 7 步：协同建立后，持续上报任务遥测数据。
     report_task_info_for_duration(
         initiator,
         initiator_id,
         task_id,
         "Location",
-        duration_seconds=args.report_duration,
+        duration_seconds=10.0,
         start_seq=2,
     )
 
-    # 第 8 步：终止任务、退出网络，并清理 demo 身份信息。
+    # 第 8 步：收尾，终止任务并退出网络。
     print(initiator.request_terminate_task(initiator_id, task_id, "demo finished"))
     print(initiator.logout_network(initiator_id))
     print(initiator.deregister_agent(initiator_id, "demo completed"))
