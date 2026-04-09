@@ -3,25 +3,18 @@ from __future__ import annotations
 import sys
 import time
 from pathlib import Path
-
-SCRIPT_DIR = Path(__file__).resolve().parent
-sys.path.insert(0, str(SCRIPT_DIR))
-sys.path.insert(0, str(SCRIPT_DIR.parent))
-
 from acn_sdk import AcnSDK, AgentInfo
 
-CONFIG_PATH = Path(__file__).resolve().parent.parent / "acn_sdk" / "config" / "config.yaml"
 DEFAULT_WAIT_TIMEOUT_SECONDS = 120.0
 
 
 def main() -> None:
-    # 第 1 步：直接加载固定配置，省略命令行参数和临时 session 目录。
+    # 1. 初始化机器狗SDK
     collaborator = AcnSDK(
-        agent_name="RobotDog",
-        config_path=CONFIG_PATH,
+        agent_name="RobotDog"
     )
 
-    # 第 2 步：注册 collaborator 身份，便于 initiator 发现。
+    # 2. 申请 collaborator 数字身份，并确认本地 agent 信息可用（查询非必须）
     collaborator_ok, collaborator_id = collaborator.register_agent_info(
         AgentInfo(
             name="RobotDog",
@@ -39,7 +32,7 @@ def main() -> None:
 
     task_id_holder: dict[str, str] = {"value": ""}
 
-    # 第 3 步：注册回调，收到任务协同请求后立刻接单。
+    # 3. 注册回调
     def collaborator_on_task_collaboration_request(payload: dict) -> None:
         print(f"[RobotDog] on_task_collaboration_request payload={payload}")
         task_id = payload["task_id"]
@@ -48,6 +41,18 @@ def main() -> None:
 
     def collaborator_on_discover_result_received(payload: dict) -> None:
         print(f"[RobotDog] on_discover_result_received payload={payload}")
+        collaborator_candidates = payload.get("discover_result", [])
+        if not collaborator_candidates:
+            raise RuntimeError("discover_result is empty")
+        task_id = task_id_holder["value"]
+        if not task_id:
+            raise RuntimeError("task_id is not initialized")
+        collaborator.start_task_collaboration(
+            collaborator_id,
+            collaborator_candidates[0],
+            task_id,
+            "协同声光驱离",
+        )
 
     def collaborator_on_task_start_command(payload: dict) -> None:
         print(f"[RobotDog] on_task_start_command payload={payload}")
@@ -69,16 +74,24 @@ def main() -> None:
         on_message_received=collaborator_on_message_received,
     )
 
-    # 第 4 步：发布能力并加入网络，然后保持在线等待 initiator 发起协同。
+    # 4. 能力注册
     print(collaborator.register_agent_attribute(collaborator_id, ["声光驱离"]))
+
+    # 5. 入网认证
     print(f"collaborator join={collaborator.join_network(collaborator_id)}")
+
+    # 6. 等待无人机发起协作任务
     time.sleep(DEFAULT_WAIT_TIMEOUT_SECONDS)
 
-    # 第 5 步：等待窗口结束后清理任务状态并退出网络。
+    # 7. 终止任务
     task_id = task_id_holder["value"]
     if task_id:
         print(collaborator.request_terminate_task(collaborator_id, task_id, "demo finished"))
+
+    # 8. 退出网络
     print(collaborator.logout_network(collaborator_id))
+
+    # 9. 去注册
     print(collaborator.deregister_agent(collaborator_id, "demo completed"))
 
 

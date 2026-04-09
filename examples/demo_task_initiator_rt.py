@@ -7,14 +7,8 @@ import threading
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
-
-SCRIPT_DIR = Path(__file__).resolve().parent
-sys.path.insert(0, str(SCRIPT_DIR))
-sys.path.insert(0, str(SCRIPT_DIR.parent))
-
 from acn_sdk import AcnSDK, AgentInfo
 
-CONFIG_PATH = Path(__file__).resolve().parent.parent / "acn_sdk" / "config" / "config.yaml"
 DEFAULT_WAIT_TIMEOUT_SECONDS = 120.0
 DEFAULT_SUBSCRIPTION_GRACE_PERIOD_SECONDS = 5.0
 
@@ -59,13 +53,12 @@ def report_task_info_for_duration(
 
 
 def main() -> None:
-    # 第 1 步：直接读取仓库里的固定配置，不再创建 session 目录或重写配置文件。
+    # 1. 初始化无人机SDK
     initiator = AcnSDK(
-        agent_name="AliceAgent",
-        config_path=CONFIG_PATH,
+        agent_name="AliceAgent"
     )
 
-    # 第 2 步：注册 initiator 身份，并确认本地 agent 信息可用。
+    # 2. 申请 initiator 数字身份，并确认本地 agent 信息可用（查询非必须）
     initiator_ok, initiator_id = initiator.register_agent_info(
         AgentInfo(
             name="AliceAgent",
@@ -84,9 +77,12 @@ def main() -> None:
     task_id_holder: dict[str, str] = {"value": ""}
     discover_result_received = threading.Event()
 
-    # 第 3 步：注册回调，按任务协同流程推进 initiator 侧状态。
+    # 3. 注册回调
     def initiator_on_task_collaboration_request(payload: dict) -> None:
         print(f"[AliceAgent] on_task_collaboration_request payload={payload}")
+        task_id = payload.get("task_id")
+        task_id_holder["value"] = task_id
+        initiator.accept_task_collaboration(initiator_id, task_id)
 
     def initiator_on_discover_result_received(payload: dict) -> None:
         print(f"[AliceAgent] on_discover_result_received payload={payload}")
@@ -106,6 +102,13 @@ def main() -> None:
 
     def initiator_on_task_start_command(payload: dict) -> None:
         print(f"[AliceAgent] on_task_start_command payload={payload}")
+        task_id = payload["task_id"]
+        task_id_holder["value"] = task_id
+        initiator.request_task_execution(
+            initiator_id,
+            payload["task_description"],
+            task_id=task_id,
+        )
 
     def initiator_on_message_received(namespace: str, track: str, payload: bytes) -> None:
         print(f"moq_message namespace={namespace} track={track} payload={payload!r}")
@@ -117,11 +120,13 @@ def main() -> None:
         on_message_received=initiator_on_message_received,
     )
 
-    # 第 4 步：先发布能力，再加入网络，等待外部发起任务协同。
+    # 4. 能力注册
     print(initiator.register_agent_attribute(initiator_id, ["可疑人员识别", "目标跟踪"]))
+
+    # 5. 入网认证
     print(f"initiator join={initiator.join_network(initiator_id)}")
 
-    # 第 5 步：申请任务，并先发一条定位样本，让协同流程尽快进入可观测状态。
+    # 6. 请求执行任务
     task_ok, task_id = initiator.request_task_execution(initiator_id, "可疑人员驱离")
     if not task_ok:
         raise RuntimeError(task_id)
@@ -137,13 +142,13 @@ def main() -> None:
         )
     )
 
-    # 第 6 步：请求协同，等待 collaborator 侧回传 discover 结果后继续推进。
+    # 7. 请求协同，等待 collaborator 侧回传 discover 结果后继续推进（仅 demo 效果，实际场景中可以直接一直上报）
     print(initiator.request_task_collaboration(initiator_id, task_id, ["声光驱离"]))
     if not discover_result_received.wait(DEFAULT_WAIT_TIMEOUT_SECONDS):
         raise RuntimeError("Timed out waiting for DISCOVER_RESULT.")
     time.sleep(DEFAULT_SUBSCRIPTION_GRACE_PERIOD_SECONDS)
 
-    # 第 7 步：协同建立后，持续上报任务遥测数据。
+    # 8. 协同建立后，持续上报任务遥测数据
     report_task_info_for_duration(
         initiator,
         initiator_id,
@@ -153,9 +158,13 @@ def main() -> None:
         start_seq=2,
     )
 
-    # 第 8 步：收尾，终止任务并退出网络。
+    # 9. 终止任务
     print(initiator.request_terminate_task(initiator_id, task_id, "demo finished"))
+
+    # 10. 退出网络
     print(initiator.logout_network(initiator_id))
+
+    # 11. 去注册
     print(initiator.deregister_agent(initiator_id, "demo completed"))
 
 
