@@ -28,6 +28,7 @@ acn_sdk.task.task_manager.TaskManager
 
 - 保存 `agent_name`
 - 自动加载 `acn_sdk/config/config.yaml`
+- 清空 `storage.identity_file` 指向的本地身份缓存，避免重复注册后复用旧 `agent_id`、VC 或能力信息
 - 初始化 `IdentityManager`、`HttpClient`、`CredentialIssuer`
 - 将 `WebSocketClient`、`moq_pub_client`、`moq_sub_client`、`TaskManager` 初值设为 `None`
 - 设置网络状态为 `offline`
@@ -43,6 +44,7 @@ acn_sdk.task.task_manager.TaskManager
 - `on_task_collaboration_request(payload)`：收到 `TASK_REQUEST_COLLABORATION` 时触发
 - `on_discover_result_received(payload)`：收到 `DISCOVER_RESULT` 时触发，通常在回调里调用 `start_task_collaboration()`
 - `on_task_start_command(payload)`：收到 `START_TASK` 时触发
+- `on_terminate_task_received(payload)`：收到 `TASK_TERMINATION` 时触发，通常在回调里调用 `request_terminate_task()`
 - `on_message_received(namespace, track, payload)`：收到 MOQ 订阅对象时触发
 
 未注册对应回调时，SDK 会跳过对应处理。
@@ -270,6 +272,23 @@ POST /acn-agent/v1/task-executions
 POST /acn-agent/v1/task-execution-terminations
 ```
 
+### `broadcast_terminate_task(agent_id: str, task_id: str, reason: str = "", force: bool = False) -> tuple[bool, str]`
+
+任务终止广播。
+
+请求路径：
+
+```text
+POST /acn-agent/v1/task-termination-broadcasts
+```
+
+说明：
+
+- 仅允许在 `online` 状态调用
+- `force` 会按字符串形式发送，取值为 `"true"` 或 `"false"`
+- 成功时返回 `(True, "")`
+- 失败时返回 `(False, error_message)`
+
 ### `task_info_report(agent_id: str, task_id: str, topic: str, message_info: bytes) -> tuple[bool, str]`
 
 任务信息上报。
@@ -318,6 +337,7 @@ POST /arf/v1/agent-discoveries
 - `TASK_REQUEST_COLLABORATION`：触发 `on_task_collaboration_request(payload)` 回调
 - `DISCOVER_RESULT`：触发 `on_discover_result_received(payload)` 回调
 - `START_TASK`：触发 `on_task_start_command(payload)` 回调
+- `TASK_TERMINATION`：触发 `on_terminate_task_received(payload)` 回调
 
 ### `clear_all() -> tuple[bool, str]`
 

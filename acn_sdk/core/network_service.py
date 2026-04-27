@@ -35,7 +35,7 @@ class SDKNetworkMixin:
                     method="SEND",
                     url=self.config.network.agent_gw_ws_url,
                     headers={},
-                    abstract="WebSocket setup handshake",
+                    abstract=f"{self.identity_manager.agent_name} joins the network",
                     content=setup_message,
                 )
                 self.websocket_client.send_json(
@@ -76,7 +76,7 @@ class SDKNetworkMixin:
                     method="SEND",
                     url=self.config.network.agent_gw_ws_url,
                     headers={},
-                    abstract="WebSocket disconnection",
+                    abstract=f"{self.identity_manager.agent_name} logs out from the network",
                     content=disconnection_message,
                 )
                 self.websocket_client.send_json(
@@ -123,6 +123,8 @@ class SDKNetworkMixin:
                 self._handle_task_assigned(payload)
             elif message_type == "START_TASK":
                 self._dispatch_message_callback("on_task_start_command", self.on_task_start_command, payload)
+            elif message_type == "TASK_TERMINATION":
+                self._dispatch_message_callback("on_terminate_task_received", self.on_terminate_task_received, payload)
 
             return (True, self._stringify_result(parsed_message))
         except Exception as exc:
@@ -194,7 +196,7 @@ class SDKNetworkMixin:
                 method="SUBSCRIBE",
                 url=f"moq://{self.config.network.network_ip}:{self.config.network.agent_gw_moq_port}",
                 headers={},
-                abstract="Subscribe MoQ track",
+                abstract=f"{self.identity_manager.agent_name} subscribes MoQ track: {track}",
                 content={"namespace": namespace, "track": track, "subscriber_id": local_agent_id},
                 task_id=payload.get("task_id"),
             )

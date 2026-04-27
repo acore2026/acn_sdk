@@ -4,7 +4,7 @@ network:
   arf_port: 9001
   agent_gw_ws_port: 9002
   agent_gw_moq_port: 9003
-  web_ui_port: 9004
+  web_ui_port: 9005
   path: /ws
 storage:
   identity_file: data/identity.json

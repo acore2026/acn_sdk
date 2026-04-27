@@ -41,6 +41,7 @@ class AcnSDK(SDKIdentityMixin, SDKNetworkMixin, SDKTaskMixin, SDKUtilsMixin):
         self.on_task_collaboration_request = None
         self.on_discover_result_received = None
         self.on_task_start_command = None
+        self.on_terminate_task_received = None
         self.on_message_received = None
         self.credential_issuer = CredentialIssuer()
         self.http_client: HttpClient | None = None
@@ -56,7 +57,7 @@ class AcnSDK(SDKIdentityMixin, SDKNetworkMixin, SDKTaskMixin, SDKUtilsMixin):
         self._network_listener_stop = threading.Event()
         self._network_listener_thread: threading.Thread | None = None
 
-        self._apply_config()
+        self._apply_config(reset_identity_cache=True)
         self._logger.info("AcnSDK initialized for agent=%s, network_status=%s", agent_name, self.network_status)
         self._logger.info(
             "SDK network endpoints acn_agent=%s ws=%s moq=%s web_ui=%s",
@@ -72,6 +73,7 @@ class AcnSDK(SDKIdentityMixin, SDKNetworkMixin, SDKTaskMixin, SDKUtilsMixin):
         on_task_collaboration_request: Any | None = None,
         on_discover_result_received: Any | None = None,
         on_task_start_command: Any | None = None,
+        on_terminate_task_received: Any | None = None,
         on_message_received: Any | None = None,
     ) -> tuple[bool, str]:
         try:
@@ -81,6 +83,8 @@ class AcnSDK(SDKIdentityMixin, SDKNetworkMixin, SDKTaskMixin, SDKUtilsMixin):
                 self.on_discover_result_received = on_discover_result_received
             if on_task_start_command is not None:
                 self.on_task_start_command = on_task_start_command
+            if on_terminate_task_received is not None:
+                self.on_terminate_task_received = on_terminate_task_received
             if on_message_received is not None:
                 self.on_message_received = on_message_received
             return (True, "OK")
@@ -111,9 +115,14 @@ class AcnSDK(SDKIdentityMixin, SDKNetworkMixin, SDKTaskMixin, SDKUtilsMixin):
             self._logger.exception("Failed to reload configuration from %s.", self.config_path)
             return (False, str(exc))
 
-    def _apply_config(self) -> None:
+    def _apply_config(self, *, reset_identity_cache: bool = False) -> None:
         setup_logging(self.config.log_level, self.config.storage.log_dir)
         self._logger = logging.getLogger(self.__class__.__name__)
+        if reset_identity_cache:
+            identity_file = Path(self.config.storage.identity_file)
+            if identity_file.exists():
+                identity_file.unlink()
+                self._logger.info("Cleared identity cache file: %s", identity_file)
         self.identity_manager = IdentityManager(self.config.storage.identity_file)
         self.http_client = HttpClient(self.config.network.acn_agent_url, self.config.network.arf_url)
         self.pipeline_log_reporter = PipelineLogReporter(self.config.network.web_ui_url)

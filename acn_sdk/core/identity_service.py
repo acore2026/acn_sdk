@@ -34,7 +34,7 @@ class SDKIdentityMixin:
                 method="POST",
                 url="/idm/v1/identity-applications",
                 headers={"Content-Type": "application/json"},
-                abstract="Register agent identity",
+                abstract=f"{agent_info.name} applies for digital identity",
                 content=payload,
             )
             response = self.http_client.register_agent_info(payload)
@@ -91,7 +91,10 @@ class SDKIdentityMixin:
                 method="POST",
                 url="/arf/v1/agent-cards",
                 headers={"Content-Type": "application/json"},
-                abstract="Register agent capabilities",
+                abstract=(
+                    f"{self.identity_manager.agent_name} registers agent capabilities: "
+                    f"{', '.join(new_capabilities)}"
+                ),
                 content=payload.model_dump(mode="json"),
             )
             response = self.http_client.register_agent_attribute(payload)
@@ -134,7 +137,7 @@ class SDKIdentityMixin:
                 method="POST",
                 url="/arf/v1/agent-info",
                 headers={"Content-Type": "application/json"},
-                abstract="Query agent info",
+                abstract=f"{self.identity_manager.agent_name} queries agent information",
                 content=request.model_dump(mode="json"),
             )
             response = self.http_client.query_agent_info(request)
@@ -157,7 +160,7 @@ class SDKIdentityMixin:
                 method="POST",
                 url="/acn-agent/v1/owner-agents",
                 headers={"Content-Type": "application/json"},
-                abstract="Query owner agent list",
+                abstract=f"Query agent list by owner: {owner_name}",
                 content=request.model_dump(mode="json"),
             )
             response = self.http_client.query_agent_list(request)
@@ -187,7 +190,7 @@ class SDKIdentityMixin:
                 method="POST",
                 url="/acn-agent/v1/agent-deletions",
                 headers={"Content-Type": "application/json"},
-                abstract="Deregister agent",
+                abstract=f"{self.identity_manager.agent_name} deregisters agent identity",
                 content=request.model_dump(mode="json"),
             )
             response = self.http_client.deregister_agent(request)
@@ -203,7 +206,7 @@ class SDKIdentityMixin:
                     method="SEND",
                     url=self.config.network.agent_gw_ws_url,
                     headers={},
-                    abstract="WebSocket disconnection",
+                    abstract=f"{self.identity_manager.agent_name} logs out from the network",
                     content=disconnection_message,
                     task_id=None,
                 )

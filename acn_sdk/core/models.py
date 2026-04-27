@@ -45,6 +45,14 @@ class TaskTerminationRequest(BaseModel):
     force: bool = False
 
 
+class TaskTerminationBroadcastRequest(BaseModel):
+    agent_id: str
+    task_id: str
+    reason: str
+    timestamp: str
+    force: str = "false"
+
+
 class AgentDiscoveryRequest(BaseModel):
     task_id: str
     agent_id: str

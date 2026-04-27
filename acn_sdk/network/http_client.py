@@ -14,6 +14,7 @@ from ..core.models import (
     OwnerAgentsQueryRequest,
     TaskExecutionRequest,
     TaskTerminationRequest,
+    TaskTerminationBroadcastRequest,
 )
 from ..utils.logging_utils import format_json_for_log
 
@@ -56,6 +57,28 @@ class HttpClient:
     def request_terminate_task(self, payload: TaskTerminationRequest) -> dict[str, Any]:
         return self._post("/acn-agent/v1/task-execution-terminations", payload.model_dump(mode="json"))
 
+    def broadcast_terminate_task(self, payload: TaskTerminationBroadcastRequest) -> tuple[bool, str]:
+        headers = {"Content-Type": "application/json"}
+        body = payload.model_dump(mode="json")
+        self._logger.info(
+            "HTTP POST %s%s\n%s",
+            self.base_url,
+            "/acn-agent/v1/task-termination-broadcasts",
+            format_json_for_log(body),
+        )
+        response = self._session.post("/acn-agent/v1/task-termination-broadcasts", json=body, headers=headers)
+        if response.status_code == 200:
+            self._logger.info("HTTP response /acn-agent/v1/task-termination-broadcasts with status=200")
+            return (True, "")
+
+        error_message = self._extract_error_message(response)
+        self._logger.info(
+            "HTTP response /acn-agent/v1/task-termination-broadcasts failed with status=%s\n%s",
+            response.status_code,
+            error_message,
+        )
+        return (False, f"HTTP request failed: {response.status_code}, {error_message}")
+
     def request_task_collaboration(self, payload: AgentDiscoveryRequest) -> dict[str, Any]:
         return self._post("/arf/v1/agent-discoveries", payload.model_dump(mode="json"), use_arf=True)
 
@@ -85,6 +108,15 @@ class HttpClient:
         if response.status_code != 200:
             raise RuntimeError(f"HTTP request failed: {response.status_code}, {result}")
         return result
+
+    @staticmethod
+    def _extract_error_message(response: httpx.Response) -> str:
+        try:
+            payload = response.json()
+        except Exception:
+            text = response.text.strip()
+            return text or "unknown error"
+        return json.dumps(payload, ensure_ascii=False) if payload != "" else "unknown error"
 
     def close(self) -> None:
         self._logger.info("Closing HttpClient session.")

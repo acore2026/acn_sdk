@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import concurrent.futures
 import time
 import logging
 import threading
@@ -8,6 +9,9 @@ from collections import defaultdict
 from typing import Any, Callable, Coroutine
 
 from moq import FullTrackName, MOQPublisher, MOQSubscriber, PublishedObject, ReceivedObject
+
+SHUTDOWN_TIMEOUT_SECONDS = 10.0
+TRANSPORT_CLOSE_TIMEOUT_SECONDS = 2.0
 
 
 class MoQClient:
@@ -219,13 +223,29 @@ class MoQClient:
         )
         loop: asyncio.AbstractEventLoop | None = None
         loop_thread: threading.Thread | None = None
+        shutdown_future: concurrent.futures.Future[object] | None = None
         with self._loop_lock:
             if self._loop is not None and self._loop_ready.is_set() and self._loop_thread is not None and self._loop_thread.is_alive():
-                self._run_async(self._shutdown_clients())
+                shutdown_future = asyncio.run_coroutine_threadsafe(self._shutdown_clients(), self._loop)
             loop = self._loop
             loop_thread = self._loop_thread
+        if shutdown_future is not None:
+            try:
+                shutdown_future.result(timeout=SHUTDOWN_TIMEOUT_SECONDS)
+            except concurrent.futures.TimeoutError:
+                shutdown_future.cancel()
+                self._logger.warning(
+                    "Timed out shutting down MoQ client role=%s after %.1fs; forcing loop stop.",
+                    self.role,
+                    SHUTDOWN_TIMEOUT_SECONDS,
+                )
+            except Exception:
+                self._logger.warning("MoQ shutdown raised during disconnect role=%s", self.role, exc_info=True)
+        with self._loop_lock:
             self._subscriptions.clear()
             self._published_tracks.clear()
+            self._publication_tracks.clear()
+            self._subscription_tracks.clear()
             self._object_counters.clear()
             self._connected = False
             if loop is not None:
@@ -322,7 +342,7 @@ class MoQClient:
                 self._publisher._session = None
             publisher_client = getattr(self._publisher, "_client", None)
             if publisher_client is not None:
-                await publisher_client.aclose()
+                await self._close_transport_client(publisher_client)
                 self._publisher._client = None
             elif hasattr(self._publisher, "disconnect"):
                 self._publisher.disconnect()
@@ -343,7 +363,7 @@ class MoQClient:
                 self._subscriber._session = None
             subscriber_client = getattr(self._subscriber, "_client", None)
             if subscriber_client is not None:
-                await subscriber_client.aclose()
+                await self._close_transport_client(subscriber_client)
                 self._subscriber._client = None
             elif hasattr(self._subscriber, "disconnect"):
                 self._subscriber.disconnect()
@@ -353,6 +373,27 @@ class MoQClient:
             self._keepalive_task = None
         self._publication_tracks.clear()
         self._subscription_tracks.clear()
+
+    async def _close_transport_client(self, client: Any) -> None:
+        aclose = getattr(client, "aclose", None)
+        if callable(aclose):
+            result = aclose()
+            if asyncio.iscoroutine(result):
+                try:
+                    await asyncio.wait_for(result, timeout=TRANSPORT_CLOSE_TIMEOUT_SECONDS)
+                except asyncio.TimeoutError:
+                    self._logger.warning(
+                        "Timed out waiting for transport close role=%s after %.1fs; falling back to close().",
+                        self.role,
+                        TRANSPORT_CLOSE_TIMEOUT_SECONDS,
+                    )
+                    close = getattr(client, "close", None)
+                    if callable(close):
+                        close()
+            return
+        close = getattr(client, "close", None)
+        if callable(close):
+            close()
 
     @staticmethod
     def _build_full_track_name(namespace: str, track: str) -> FullTrackName:

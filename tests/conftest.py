@@ -113,6 +113,17 @@ class MockHttpSession:
             }
             return MockResponse(200, payload)
 
+        if url == "/acn-agent/v1/task-termination-broadcasts":
+            payload = {
+                "result": "success",
+                "message": "Task termination broadcast sent",
+                "agent_id": json["agent_id"],
+                "task_id": json["task_id"],
+                "reason": json["reason"],
+                "force": json["force"],
+            }
+            return MockResponse(200, payload)
+
         if url == "/arf/v1/agent-discoveries":
             payload = {
                 "result": "success",

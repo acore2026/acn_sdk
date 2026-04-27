@@ -743,6 +743,42 @@ def test_query_task_status_and_list(sdk_environment: object) -> None:
     }
 
 
+def test_broadcast_terminate_task_posts_to_acn_agent(sdk_environment: object) -> None:
+    sdk = create_sdk()
+    agent_info = AgentInfo(
+        name="AliceAgent",
+        owner="+8613800138000",
+        description="AgentModel-X, SN123456",
+        priority=5,
+        metadata={},
+    )
+    result, agent_id = sdk.register_agent_info(agent_info)
+    assert result is True
+
+    websocket_client = MockWebSocketClient(
+        [{"type": "SETUP", "timestamp": "2025-01-01T00:00:00Z", "payload": {"status": "OK"}}]
+    )
+    sdk._create_websocket_client = lambda: websocket_client
+    sdk._create_moq_client = lambda role: RecordingMoQClient("127.0.0.1", 9003, role)
+
+    result, _ = sdk.join_network(agent_id)
+    assert result is True
+
+    result, message = sdk.broadcast_terminate_task(agent_id, "task-12345", "结束任务协同", force=False)
+    assert result is True
+    assert message == ""
+    request = sdk.http_client._session.requests[-1]
+    assert request[0] == "/acn-agent/v1/task-termination-broadcasts"
+    assert request[1] == {
+        "agent_id": agent_id,
+        "task_id": "task-12345",
+        "reason": "结束任务协同",
+        "timestamp": request[1]["timestamp"],
+        "force": "false",
+    }
+    assert request[2] == {"Content-Type": "application/json"}
+
+
 def test_join_network_starts_background_listener_for_subscribe_track(sdk_environment: object) -> None:
     sdk = AcnSDK(agent_name="AliceAgent")
     agent_info = AgentInfo(
@@ -801,6 +837,7 @@ def test_register_callbacks_dispatches_websocket_and_moq_messages(sdk_environmen
         on_task_collaboration_request=lambda payload: ws_messages.append(("TASK_REQUEST_COLLABORATION", payload)),
         on_discover_result_received=lambda payload: ws_messages.append(("DISCOVER_RESULT", payload)),
         on_task_start_command=lambda payload: ws_messages.append(("START_TASK", payload)),
+        on_terminate_task_received=lambda payload: ws_messages.append(("TASK_TERMINATION", payload)),
         on_message_received=lambda namespace, track, payload: moq_messages.append((namespace, track, payload)),
     ) == (True, "OK")
 
@@ -825,11 +862,28 @@ def test_register_callbacks_dispatches_websocket_and_moq_messages(sdk_environmen
             "payload": {"task_id": "task-1", "task_description": "demo task"},
         }
     )[0] is True
+    assert sdk.handle_network_message(
+        {
+            "type": "TASK_TERMINATION",
+            "timestamp": "2025-01-01T00:00:00Z",
+            "payload": {
+                "src_agent_id": "did:acn:agent:peer-1",
+                "task_id": "task-1",
+                "reason": "终止协同任务",
+            },
+        }
+    )[0] is True
 
     sdk._handle_moq_object_received("/task-1/did:acn:agent:alice", "Location", b"payload")
 
-    assert [message_type for message_type, _ in ws_messages] == ["TASK_REQUEST_COLLABORATION", "DISCOVER_RESULT", "START_TASK"]
+    assert [message_type for message_type, _ in ws_messages] == [
+        "TASK_REQUEST_COLLABORATION",
+        "DISCOVER_RESULT",
+        "START_TASK",
+        "TASK_TERMINATION",
+    ]
     assert ws_messages[2][1]["task_description"] == "demo task"
+    assert ws_messages[3][1]["task_id"] == "task-1"
     assert moq_messages == [("/task-1/did:acn:agent:alice", "Location", b"payload")]
 
 
@@ -1011,6 +1065,35 @@ def test_reload_config_reflects_yaml_changes(sdk_environment: object) -> None:
     assert sdk.config.network.acn_agent_port == 9110
     assert sdk.config.network.agent_gw_ws_port == 9012
     assert sdk.http_client.base_url == "http://127.0.0.1:9110"
+
+
+def test_sdk_initialization_clears_stale_identity_cache(sdk_environment: object) -> None:
+    config = sdk_environment
+    identity_file = Path(config.storage.identity_file)
+    identity_file.write_text(
+        json.dumps(
+            {
+                "agent_id": "did:acn:agent:stale",
+                "vc0": {"id": "stale-vc0"},
+                "capability_names": ["old-capability"],
+                "capability_vcs": [{"id": "old-vc"}],
+                "agent_name": "OldAgent",
+                "owner": "+8613000000000",
+                "priority": 9,
+                "metadata": {"stale": True},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    sdk = create_sdk()
+
+    assert not identity_file.exists()
+    assert sdk.identity_manager.agent_id is None
+    assert sdk.identity_manager.vc0 is None
+    assert sdk.identity_manager.capability_names == []
+    assert sdk.identity_manager.capability_vcs == []
+    assert sdk.identity_manager.query_agent_id("OldAgent", "+8613000000000") is None
 
 
 def test_http_client_disables_env_proxy_inheritance() -> None:

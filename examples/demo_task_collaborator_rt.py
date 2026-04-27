@@ -5,7 +5,7 @@ import time
 from pathlib import Path
 from acn_sdk import AcnSDK, AgentInfo
 
-DEFAULT_WAIT_TIMEOUT_SECONDS = 120.0
+DEFAULT_WAIT_TIMEOUT_SECONDS = 30.0
 
 
 def main() -> None:

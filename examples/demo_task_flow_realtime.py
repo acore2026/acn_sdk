@@ -187,6 +187,18 @@ def main() -> None:
     def initiator_on_task_start_command(payload: dict) -> None:
         print(f"[AliceAgent] on_task_start_command payload={payload}")
 
+    def make_on_terminate_task_received(label: str, sdk: Any, agent_id: str):
+        def _on_terminate_task_received(payload: dict) -> None:
+            print(f"[{label}] on_terminate_task_received payload={payload}")
+            task_id = payload.get("task_id")
+            reason = payload.get("reason", "")
+            if not isinstance(task_id, str) or not task_id:
+                raise RuntimeError("task_id is not available in TASK_TERMINATION payload")
+            result = sdk.request_terminate_task(agent_id, task_id, reason)
+            print(f"[{label}] request_terminate_task result={result}")
+
+        return _on_terminate_task_received
+
     # 两个 agent 都打印 MoQ 载荷，方便在 demo 中观察实时传输。
     def initiator_on_message_received(namespace: str, track: str, payload: bytes) -> None:
         print(f"moq_message namespace={namespace} track={track} payload={payload!r}")
@@ -199,12 +211,14 @@ def main() -> None:
         on_task_collaboration_request=initiator_on_task_collaboration_request,
         on_discover_result_received=initiator_on_discover_result_received,
         on_task_start_command=initiator_on_task_start_command,
+        on_terminate_task_received=make_on_terminate_task_received("AliceAgent", initiator, initiator_id),
         on_message_received=initiator_on_message_received,
     )
     collaborator.register_callbacks(
         on_task_collaboration_request=collaborator_on_task_collaboration_request,
         on_discover_result_received=collaborator_on_discover_result_received,
         on_task_start_command=collaborator_on_task_start_command,
+        on_terminate_task_received=make_on_terminate_task_received("RobotDog", collaborator, collaborator_id),
         on_message_received=collaborator_on_message_received,
     )
 

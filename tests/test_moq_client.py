@@ -85,6 +85,30 @@ class BlockingSubscriber(FakeSubscriber):
         return await super().subscribe(track_name)
 
 
+class SyncOnlyClient:
+    def __init__(self) -> None:
+        self.closed = False
+
+    def close(self) -> None:
+        self.closed = True
+
+
+class HangingAsyncCloseClient:
+    def __init__(self) -> None:
+        self.closed = False
+        self.cancelled = False
+
+    async def aclose(self) -> None:
+        try:
+            await asyncio.sleep(60.0)
+        except asyncio.CancelledError:
+            self.cancelled = True
+            raise
+
+    def close(self) -> None:
+        self.closed = True
+
+
 def test_moq_publisher_client_uses_real_track_encoding(monkeypatch) -> None:
     import acn_sdk.network.moq_client as moq_client_module
 
@@ -194,3 +218,56 @@ def test_moq_client_serializes_loop_access_across_threads(monkeypatch) -> None:
     finally:
         client.disconnect()
         assert client._loop_thread is None or client._loop_thread.is_alive() is False
+
+
+def test_moq_client_disconnect_falls_back_to_sync_close(monkeypatch) -> None:
+    import acn_sdk.network.moq_client as moq_client_module
+
+    monkeypatch.setattr(moq_client_module, "MOQPublisher", FakePublisher)
+
+    client = MoQClient("127.0.0.1", 9003, "publisher")
+    client.connect()
+    assert client._publisher is not None
+    sync_client = SyncOnlyClient()
+    client._publisher._client = sync_client
+
+    client.disconnect()
+
+    assert sync_client.closed is True
+
+
+def test_moq_client_disconnect_handles_async_close_timeout(monkeypatch) -> None:
+    import acn_sdk.network.moq_client as moq_client_module
+
+    monkeypatch.setattr(moq_client_module, "MOQPublisher", FakePublisher)
+    monkeypatch.setattr(moq_client_module, "TRANSPORT_CLOSE_TIMEOUT_SECONDS", 0.01)
+
+    client = MoQClient("127.0.0.1", 9003, "publisher")
+    client.connect()
+    assert client._publisher is not None
+    hanging_client = HangingAsyncCloseClient()
+    client._publisher._client = hanging_client
+
+    client.disconnect()
+
+    assert hanging_client.cancelled is True
+    assert hanging_client.closed is True
+    assert client._loop_thread is None
+    assert client._publisher is None
+
+
+def test_moq_subscriber_disconnect_cancels_object_task() -> None:
+    from moq.sub.subscriber import MOQSubscriber
+
+    async def run() -> None:
+        subscriber = MOQSubscriber("127.0.0.1", 9003)
+        object_task = asyncio.create_task(asyncio.sleep(60.0))
+        subscriber._object_task = object_task
+
+        subscriber.disconnect()
+        await asyncio.sleep(0)
+
+        assert subscriber._object_task is None
+        assert object_task.cancelled() is True
+
+    asyncio.run(run())

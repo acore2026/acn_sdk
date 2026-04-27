@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from .models import AgentDiscoveryRequest, TaskExecutionRequest, TaskTerminationRequest
+from .models import AgentDiscoveryRequest, TaskExecutionRequest, TaskTerminationBroadcastRequest, TaskTerminationRequest
 from .common import TASK_PROCESSING, TASK_TERMINATED
 
 
@@ -44,7 +44,7 @@ class SDKTaskMixin:
                 method="POST",
                 url="/acn-agent/v1/task-executions",
                 headers={"Content-Type": "application/json"},
-                abstract="Request task execution",
+                abstract=f"{self.identity_manager.agent_name} requests task execution, task id = {task_id}",
                 content=request.model_dump(mode="json"),
                 task_id=task_id,
             )
@@ -86,7 +86,7 @@ class SDKTaskMixin:
                 method="POST",
                 url="/acn-agent/v1/task-execution-terminations",
                 headers={"Content-Type": "application/json"},
-                abstract="Request task termination",
+                abstract=f"{self.identity_manager.agent_name} requests task termination, task id = {task_id}",
                 content=request.model_dump(mode="json"),
                 task_id=task_id,
             )
@@ -98,6 +98,41 @@ class SDKTaskMixin:
             return (True, self._stringify_result(response))
         except Exception as exc:
             self._logger.exception("Failed to request task termination for task_id=%s.", task_id)
+            return (False, str(exc))
+
+    def broadcast_terminate_task(
+        self,
+        agent_id: str,
+        task_id: str,
+        reason: str = "",
+        force: bool = False,
+    ) -> tuple[bool, str]:
+        try:
+            self._require_online_agent(agent_id)
+            request = TaskTerminationBroadcastRequest(
+                agent_id=agent_id,
+                task_id=task_id,
+                reason=reason,
+                timestamp=self._utc_timestamp(),
+                force=str(force).lower(),
+            )
+            self._report_pipeline_log(
+                protocol="HTTP",
+                destination="ACN Agent",
+                method="POST",
+                url="/acn-agent/v1/task-termination-broadcasts",
+                headers={"Content-Type": "application/json"},
+                abstract=f"{self.identity_manager.agent_name} broadcasts task termination, task id = {task_id}",
+                content=request.model_dump(mode="json"),
+                task_id=task_id,
+            )
+            result, message = self.http_client.broadcast_terminate_task(request)
+            if not result:
+                raise RuntimeError(message)
+            self._logger.info("Task termination broadcast sent. task_id=%s", task_id)
+            return (True, "")
+        except Exception as exc:
+            self._logger.exception("Failed to broadcast task termination for task_id=%s.", task_id)
             return (False, str(exc))
 
     def task_info_report(self, agent_id: str, task_id: str, topic: str, message_info: bytes) -> tuple[bool, str]:
@@ -117,7 +152,7 @@ class SDKTaskMixin:
                     method="PUBLISH",
                     url=moq_url,
                     headers={},
-                    abstract="Publish MoQ track",
+                    abstract=f"{self.identity_manager.agent_name} publishes MoQ track: {topic}",
                     content={"namespace": namespace, "track": topic},
                     task_id=task_id,
                 )
@@ -138,7 +173,7 @@ class SDKTaskMixin:
                     method="SEND",
                     url=self.config.network.agent_gw_ws_url,
                     headers={},
-                    abstract="Announce MoQ published track",
+                    abstract=f"{self.identity_manager.agent_name} announces MoQ published track: {topic}",
                     content=publish_track_message,
                     task_id=task_id,
                 )
@@ -194,7 +229,10 @@ class SDKTaskMixin:
                 method="POST",
                 url="/arf/v1/agent-discoveries",
                 headers={"Content-Type": "application/json"},
-                abstract="Request task collaboration",
+                abstract=(
+                    f"{self.identity_manager.agent_name} requests task collaboration "
+                    f"with required capabilities: {', '.join(capability_list)}"
+                ),
                 content=request.model_dump(mode="json"),
                 task_id=task_id,
             )
@@ -233,7 +271,7 @@ class SDKTaskMixin:
                 method="SEND",
                 url=self.config.network.agent_gw_ws_url,
                 headers={},
-                abstract="Accept task collaboration",
+                abstract=f"{self.identity_manager.agent_name} accepts task collaboration",
                 content=message,
                 task_id=task_id,
             )
@@ -270,7 +308,7 @@ class SDKTaskMixin:
                 method="SEND",
                 url=self.config.network.agent_gw_ws_url,
                 headers={},
-                abstract="Start task collaboration",
+                abstract=f"{self.identity_manager.agent_name} notifies the collaborator to start task collaboration",
                 content=message,
                 task_id=task_id,
             )

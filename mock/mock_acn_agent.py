@@ -185,6 +185,21 @@ def terminate_task_execution(payload: TaskTermination) -> dict:
     return response
 
 
+@app.post("/acn-agent/v1/task-termination-broadcasts")
+def broadcast_task_termination(payload: TaskTermination) -> dict:
+    logger.info("Received task termination broadcast: %s", payload.model_dump(mode="json"))
+    response = {
+        "result": "success",
+        "message": "Task termination broadcast sent",
+        "agent_id": payload.agent_id,
+        "task_id": payload.task_id,
+        "reason": payload.reason,
+        "force": payload.force,
+    }
+    logger.info("Responding task termination broadcast: %s", response)
+    return response
+
+
 @app.post("/acn-agent/v1/owner-agents")
 def query_owner_agents(payload: dict) -> list[dict]:
     logger.info("Received owner agent list query: %s", payload)
