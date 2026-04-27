@@ -35,7 +35,7 @@ class SDKNetworkMixin:
                     method="SEND",
                     url=self.config.network.agent_gw_ws_url,
                     headers={},
-                    abstract=f"{self.identity_manager.agent_name} joins the network",
+                    abstract="WebSocket setup handshake",
                     content=setup_message,
                 )
                 self.websocket_client.send_json(

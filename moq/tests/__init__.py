@@ -1,3 +1,0 @@
-"""
-MOQ Transport Tests
-"""
