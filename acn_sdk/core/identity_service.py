@@ -177,24 +177,6 @@ class SDKIdentityMixin:
             if self._has_processing_tasks():
                 raise RuntimeError("Cannot deregister while tasks are still processing.")
 
-            timestamp = self._utc_timestamp()
-            request = DeregisterRequest(
-                agent_id=agent_id,
-                reason=reason,
-                timestamp=timestamp,
-                signature=sign_timestamp(self.config.storage.private_key_file, timestamp),
-            )
-            self._report_pipeline_log(
-                protocol="HTTP",
-                destination="ACN Agent",
-                method="POST",
-                url="/acn-agent/v1/agent-deletions",
-                headers={"Content-Type": "application/json"},
-                abstract=f"{self.identity_manager.agent_name} deregisters agent identity",
-                content=request.model_dump(mode="json"),
-            )
-            response = self.http_client.deregister_agent(request)
-
             if self.network_status == NETWORK_ONLINE and self.websocket_client is not None:
                 disconnection_message = self._build_ws_message(
                     "DISCONNECTION",
@@ -213,6 +195,28 @@ class SDKIdentityMixin:
                 self.websocket_client.send_json(
                     disconnection_message
                 )
+                disconnect_result, disconnect_message = self.disconnect_all(close_http=False, clear_task_registry=False)
+                if not disconnect_result:
+                    raise RuntimeError(disconnect_message)
+
+            timestamp = self._utc_timestamp()
+            request = DeregisterRequest(
+                agent_id=agent_id,
+                reason=reason,
+                timestamp=timestamp,
+                signature=sign_timestamp(self.config.storage.private_key_file, timestamp),
+            )
+            self._report_pipeline_log(
+                protocol="HTTP",
+                destination="ACN Agent",
+                method="POST",
+                url="/acn-agent/v1/agent-deletions",
+                headers={"Content-Type": "application/json"},
+                abstract=f"{self.identity_manager.agent_name} deregisters agent identity",
+                content=request.model_dump(mode="json"),
+            )
+            response = self.http_client.deregister_agent(request)
+
             self._clear_identity_and_network_state(clear_task_registry=True)
             self._logger.info("Robot deregistered. agent_id=%s", agent_id)
             return (True, self._stringify_result(response))

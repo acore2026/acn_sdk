@@ -42,6 +42,7 @@ class AcnSDK(SDKIdentityMixin, SDKNetworkMixin, SDKTaskMixin, SDKUtilsMixin):
         self.on_discover_result_received = None
         self.on_task_start_command = None
         self.on_terminate_task_received = None
+        self.on_subscribe_track_received = None
         self.on_message_received = None
         self.credential_issuer = CredentialIssuer()
         self.http_client: HttpClient | None = None
@@ -74,6 +75,7 @@ class AcnSDK(SDKIdentityMixin, SDKNetworkMixin, SDKTaskMixin, SDKUtilsMixin):
         on_discover_result_received: Any | None = None,
         on_task_start_command: Any | None = None,
         on_terminate_task_received: Any | None = None,
+        on_subscribe_track_received: Any | None = None,
         on_message_received: Any | None = None,
     ) -> tuple[bool, str]:
         try:
@@ -85,6 +87,8 @@ class AcnSDK(SDKIdentityMixin, SDKNetworkMixin, SDKTaskMixin, SDKUtilsMixin):
                 self.on_task_start_command = on_task_start_command
             if on_terminate_task_received is not None:
                 self.on_terminate_task_received = on_terminate_task_received
+            if on_subscribe_track_received is not None:
+                self.on_subscribe_track_received = on_subscribe_track_received
             if on_message_received is not None:
                 self.on_message_received = on_message_received
             return (True, "OK")

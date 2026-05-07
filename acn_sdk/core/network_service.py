@@ -105,7 +105,8 @@ class SDKNetworkMixin:
             self._logger.info("Handling network message type=%s payload=\n%s", message_type, format_json_for_log(payload))
 
             if message_type == "SUBSCRIBE_TRACK":
-                self._handle_subscribe_track(payload)
+                track_modes = self._dispatch_subscribe_track_callback(payload)
+                self._handle_subscribe_track(payload, track_modes=track_modes)
             elif message_type == "CLEAR":
                 self._clear_identity_and_network_state(clear_task_registry=True, force_stop_processing_tasks=True)
             elif message_type == "TASK_REQUEST_COLLABORATION":
@@ -179,7 +180,7 @@ class SDKNetworkMixin:
             on_object_received=self._handle_moq_object_received if role == "subscriber" else None,
         )
 
-    def _handle_subscribe_track(self, payload: dict[str, Any]) -> None:
+    def _handle_subscribe_track(self, payload: dict[str, Any], track_modes: dict[str, str] | None = None) -> None:
         if self.moq_sub_client is None:
             raise RuntimeError("MoQ subscriber is not connected. Call join_network() first.")
         local_agent_id = self.identity_manager.agent_id or self.agent_name
@@ -187,9 +188,37 @@ class SDKNetworkMixin:
         for track_info in payload.get("track_list", []):
             namespace = track_info["namespace"]
             track = track_info["track"]
+            mode = self._subscribe_track_mode_for(track_info, track_modes)
             track_key = self._track_key(namespace, track)
             if track_key in self._subscribed_tracks or track_key in self._published_tracks:
                 continue
+            if mode == "fetch":
+                self._report_pipeline_log(
+                    protocol="MoQ",
+                    destination="Agent GW",
+                    method="FETCH",
+                    url=f"moq://{self.config.network.network_ip}:{self.config.network.agent_gw_moq_port}",
+                    headers={},
+                    abstract=f"{self.identity_manager.agent_name} fetches MoQ track history: {track}",
+                    content={
+                        "namespace": namespace,
+                        "track": track,
+                        "subscriber_id": local_agent_id,
+                        "start_group": 0,
+                        "start_object": 0,
+                        "end_group": None,
+                        "end_object": None,
+                    },
+                    task_id=payload.get("task_id"),
+                )
+                self.moq_sub_client.fetch(
+                    namespace,
+                    track,
+                    start_group=0,
+                    start_object=0,
+                    end_group=None,
+                    end_object=None,
+                )
             self._report_pipeline_log(
                 protocol="MoQ",
                 destination="Agent GW",
@@ -204,6 +233,44 @@ class SDKNetworkMixin:
             self._subscribed_tracks.add(track_key)
             if isinstance(task_id, str) and task_id:
                 self._track_task_subscribed(task_id, track_key)
+
+    def _dispatch_subscribe_track_callback(self, payload: dict[str, Any]) -> dict[str, str]:
+        callback = self.on_subscribe_track_received
+        if callback is None:
+            return {}
+        try:
+            result = callback(payload)
+        except TypeError as exc:
+            raise TypeError("on_subscribe_track_received must accept a single payload argument.") from exc
+        return self._normalize_subscribe_track_modes(result)
+
+    def _normalize_subscribe_track_modes(self, result: Any) -> dict[str, str]:
+        if result is None:
+            return {}
+        if not isinstance(result, dict):
+            raise TypeError("on_subscribe_track_received must return None or a mode mapping.")
+
+        modes: dict[str, str] = {}
+        for key, mode in result.items():
+            if not isinstance(key, str) or not isinstance(mode, str):
+                raise TypeError("subscribe track mode mapping keys and values must be strings.")
+            self._validate_subscribe_track_mode(mode)
+            modes[key] = mode
+        return modes
+
+    def _subscribe_track_mode_for(self, track_info: dict[str, Any], track_modes: dict[str, str] | None) -> str:
+        namespace = track_info["namespace"]
+        track = track_info["track"]
+        mode = (track_modes or {}).get(self._track_key(namespace, track), "subscribe")
+        if not isinstance(mode, str):
+            raise TypeError("subscribe track mode must be a string.")
+        self._validate_subscribe_track_mode(mode)
+        return mode
+
+    @staticmethod
+    def _validate_subscribe_track_mode(mode: str) -> None:
+        if mode not in {"subscribe", "fetch"}:
+            raise ValueError("subscribe track mode must be 'subscribe' or 'fetch'.")
 
     def _handle_task_assigned(self, payload: dict[str, Any]) -> None:
         agent_id = self.identity_manager.agent_id

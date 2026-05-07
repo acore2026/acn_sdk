@@ -52,4 +52,9 @@ moq/session/session.py
 moq/sub/__init__.py
 moq/sub/subscriber.py
 moq/transport/__init__.py
+moq/transport/combined_transport.py
 moq/transport/quic_transport.py
+moq/transport/webtransport.py
+tests/test_identity_flow.py
+tests/test_logging_format.py
+tests/test_moq_client.py

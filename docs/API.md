@@ -45,9 +45,15 @@ acn_sdk.task.task_manager.TaskManager
 - `on_discover_result_received(payload)`：收到 `DISCOVER_RESULT` 时触发，通常在回调里调用 `start_task_collaboration()`
 - `on_task_start_command(payload)`：收到 `START_TASK` 时触发
 - `on_terminate_task_received(payload)`：收到 `TASK_TERMINATION` 时触发，通常在回调里调用 `request_terminate_task()`
+- `on_subscribe_track_received(payload)`：收到 `SUBSCRIBE_TRACK` 时触发，可返回每个 track 的订阅模式
 - `on_message_received(namespace, track, payload)`：收到 MOQ 订阅对象时触发
 
-未注册对应回调时，SDK 会跳过对应处理。
+`on_subscribe_track_received` 返回值可选：
+
+- `None`：所有 track 默认直接执行 MOQ subscribe
+- `dict[str, str]`：按 track 选择模式，key 为 `"{namespace}::{track}"`，value 为 `"subscribe"` 或 `"fetch"`
+
+未注册对应回调时，SDK 会跳过业务通知；`SUBSCRIBE_TRACK` 未注册回调时仍默认执行 subscribe。
 
 ### `reload_config() -> tuple[bool, str]`
 
@@ -332,7 +338,7 @@ POST /arf/v1/agent-discoveries
 
 当前支持：
 
-- `SUBSCRIBE_TRACK`：触发本地 MOQ 订阅
+- `SUBSCRIBE_TRACK`：触发 `on_subscribe_track_received(payload)` 回调，并按回调返回值对每个 track 执行本地 MOQ fetch/subscribe
 - `CLEAR`：清空本地任务、发布和订阅缓存
 - `TASK_REQUEST_COLLABORATION`：触发 `on_task_collaboration_request(payload)` 回调
 - `DISCOVER_RESULT`：触发 `on_discover_result_received(payload)` 回调

@@ -64,8 +64,10 @@ class RecordingMoQClient(MoQClient):
         self.published: list[tuple[str, str]] = []
         self.unpublished: list[tuple[str, str]] = []
         self.sent_objects: list[tuple[str, str, bytes]] = []
+        self.fetched: list[tuple[str, str, int, int, int | None, int | None]] = []
         self.subscribed: list[tuple[str, str, str]] = []
         self.unsubscribed: list[tuple[str, str, str | None]] = []
+        self.operations: list[tuple[str, str, str]] = []
         self._published_tracks: set[str] = set()
         self._subscriptions: dict[str, list[str]] = {}
 
@@ -84,8 +86,22 @@ class RecordingMoQClient(MoQClient):
         self._published_tracks.discard(f"{namespace}::{track}")
 
     def subscribe(self, namespace: str, track: str, subscriber_id: str) -> None:
+        self.operations.append(("subscribe", namespace, track))
         self.subscribed.append((namespace, track, subscriber_id))
         self._subscriptions.setdefault(f"{namespace}::{track}", []).append(subscriber_id)
+
+    def fetch(
+        self,
+        namespace: str,
+        track: str,
+        start_group: int = 0,
+        start_object: int = 0,
+        end_group: int | None = None,
+        end_object: int | None = None,
+    ) -> int:
+        self.operations.append(("fetch", namespace, track))
+        self.fetched.append((namespace, track, start_group, start_object, end_group, end_object))
+        return len(self.fetched)
 
     def unsubscribe(self, namespace: str, track: str, subscriber_id: str | None = None) -> None:
         self.unsubscribed.append((namespace, track, subscriber_id))
@@ -885,6 +901,131 @@ def test_register_callbacks_dispatches_websocket_and_moq_messages(sdk_environmen
     assert ws_messages[2][1]["task_description"] == "demo task"
     assert ws_messages[3][1]["task_id"] == "task-1"
     assert moq_messages == [("/task-1/did:acn:agent:alice", "Location", b"payload")]
+
+
+def test_subscribe_track_callback_runs_before_default_subscribe(sdk_environment: object) -> None:
+    sdk = create_sdk()
+    agent_id = "did:acn:agent:alice"
+    sdk.identity_manager.agent_id = agent_id
+    sdk.moq_sub_client = RecordingMoQClient("127.0.0.1", 9003, "subscriber")
+    events: list[tuple[str, dict[str, object] | None]] = []
+
+    assert sdk.register_callbacks(
+        on_subscribe_track_received=lambda payload: events.append(("callback", payload))
+    ) == (True, "OK")
+
+    message = {
+        "type": "SUBSCRIBE_TRACK",
+        "timestamp": "2025-01-01T00:00:00Z",
+        "payload": {
+            "src_agent_id": "did:acn:agent:peer-1",
+            "task_id": "task-1",
+            "track_list": [{"namespace": "/task-1/did:acn:agent:peer-1", "track": "Location"}],
+        },
+    }
+    result, _ = sdk.handle_network_message(message)
+
+    assert result is True
+    assert events == [("callback", message["payload"])]
+    assert sdk.moq_sub_client.operations == [("subscribe", "/task-1/did:acn:agent:peer-1", "Location")]
+    assert sdk.moq_sub_client.subscribed == [("/task-1/did:acn:agent:peer-1", "Location", agent_id)]
+
+
+def test_subscribe_track_callback_selects_fetch_per_track(sdk_environment: object) -> None:
+    sdk = create_sdk()
+    agent_id = "did:acn:agent:alice"
+    sdk.identity_manager.agent_id = agent_id
+    sdk.moq_sub_client = RecordingMoQClient("127.0.0.1", 9003, "subscriber")
+
+    def on_subscribe_track_received(payload: dict[str, object]) -> dict[str, str]:
+        track_modes: dict[str, str] = {}
+        for track_info in payload["track_list"]:  # type: ignore[index]
+            if track_info["track"] == "Location":
+                track_modes[f"{track_info['namespace']}::{track_info['track']}"] = "fetch"
+            else:
+                track_modes[f"{track_info['namespace']}::{track_info['track']}"] = "subscribe"
+        return track_modes
+
+    assert sdk.register_callbacks(on_subscribe_track_received=on_subscribe_track_received) == (True, "OK")
+
+    result, _ = sdk.handle_network_message(
+        {
+            "type": "SUBSCRIBE_TRACK",
+            "timestamp": "2025-01-01T00:00:00Z",
+            "payload": {
+                "src_agent_id": "did:acn:agent:peer-1",
+                "task_id": "task-1",
+                "track_list": [
+                    {"namespace": "/task-1/did:acn:agent:peer-1", "track": "Location"},
+                    {"namespace": "/task-1/did:acn:agent:peer-1", "track": "Status"},
+                ],
+            },
+        }
+    )
+
+    assert result is True
+    assert sdk.moq_sub_client.fetched == [("/task-1/did:acn:agent:peer-1", "Location", 0, 0, None, None)]
+    assert sdk.moq_sub_client.subscribed == [
+        ("/task-1/did:acn:agent:peer-1", "Location", agent_id),
+        ("/task-1/did:acn:agent:peer-1", "Status", agent_id),
+    ]
+    assert sdk.moq_sub_client.operations == [
+        ("fetch", "/task-1/did:acn:agent:peer-1", "Location"),
+        ("subscribe", "/task-1/did:acn:agent:peer-1", "Location"),
+        ("subscribe", "/task-1/did:acn:agent:peer-1", "Status"),
+    ]
+    assert [record["method"] for record in sdk.pipeline_log_reporter.records] == ["FETCH", "SUBSCRIBE", "SUBSCRIBE"]
+
+
+def test_subscribe_track_skips_fetch_and_subscribe_for_duplicate_track(sdk_environment: object) -> None:
+    sdk = create_sdk()
+    sdk.identity_manager.agent_id = "did:acn:agent:alice"
+    sdk.moq_sub_client = RecordingMoQClient("127.0.0.1", 9003, "subscriber")
+    sdk.register_callbacks(
+        on_subscribe_track_received=lambda payload: {"/task-1/did:acn:agent:peer-1::Location": "fetch"}
+    )
+    sdk._subscribed_tracks.add("/task-1/did:acn:agent:peer-1::Location")
+
+    result, _ = sdk.handle_network_message(
+        {
+            "type": "SUBSCRIBE_TRACK",
+            "timestamp": "2025-01-01T00:00:00Z",
+            "payload": {
+                "src_agent_id": "did:acn:agent:peer-1",
+                "task_id": "task-1",
+                "track_list": [{"namespace": "/task-1/did:acn:agent:peer-1", "track": "Location"}],
+            },
+        }
+    )
+
+    assert result is True
+    assert sdk.moq_sub_client.fetched == []
+    assert sdk.moq_sub_client.subscribed == []
+
+
+def test_subscribe_track_callback_rejects_invalid_mode(sdk_environment: object) -> None:
+    sdk = create_sdk()
+    sdk.identity_manager.agent_id = "did:acn:agent:alice"
+    sdk.moq_sub_client = RecordingMoQClient("127.0.0.1", 9003, "subscriber")
+
+    assert sdk.register_callbacks(
+        on_subscribe_track_received=lambda payload: {"/task-1/did:acn:agent:peer-1::Location": "invalid"}
+    ) == (True, "OK")
+    result, message = sdk.handle_network_message(
+        {
+            "type": "SUBSCRIBE_TRACK",
+            "timestamp": "2025-01-01T00:00:00Z",
+            "payload": {
+                "src_agent_id": "did:acn:agent:peer-1",
+                "task_id": "task-1",
+                "track_list": [{"namespace": "/task-1/did:acn:agent:peer-1", "track": "Location"}],
+            },
+        }
+    )
+
+    assert result is False
+    assert "subscribe track mode" in message
+    assert sdk.moq_sub_client.operations == []
 
 
 def test_handle_network_message_task_assigned_requests_task_execution(sdk_environment: object) -> None:

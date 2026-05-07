@@ -174,6 +174,41 @@ class MoQClient:
             subscriber_id,
         )
 
+    def fetch(
+        self,
+        namespace: str,
+        track: str,
+        start_group: int = 0,
+        start_object: int = 0,
+        end_group: int | None = None,
+        end_object: int | None = None,
+    ) -> int:
+        if self._subscriber is None:
+            raise RuntimeError("MoQ subscriber is not connected.")
+        full_track_name = self._build_full_track_name(namespace, track)
+        request_id = self._run_async(
+            self._subscriber.fetch(
+                full_track_name,
+                start_group=start_group,
+                start_object=start_object,
+                end_group=end_group,
+                end_object=end_object,
+            )
+        )
+        if not isinstance(request_id, int) or request_id < 0:
+            raise RuntimeError(f"Failed to fetch track: {self._track_key(namespace, track)}")
+        self._logger.info(
+            "MoQ fetch namespace=%s track=%s request_id=%s range=[%s:%s to %s:%s]",
+            namespace,
+            track,
+            request_id,
+            start_group,
+            start_object,
+            end_group,
+            end_object,
+        )
+        return request_id
+
     def unsubscribe(self, namespace: str, track: str, subscriber_id: str | None = None) -> None:
         if self._subscriber is None:
             raise RuntimeError("MoQ subscriber is not connected.")
