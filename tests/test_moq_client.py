@@ -3,7 +3,8 @@ from __future__ import annotations
 import asyncio
 import threading
 
-from moq import FullTrackName
+from moq import FullTrackName, ReceivedObject
+from moq.messages import ObjectStatus
 
 from acn_sdk.network.moq_client import MoQClient
 
@@ -271,3 +272,102 @@ def test_moq_subscriber_disconnect_cancels_object_task() -> None:
         assert object_task.cancelled() is True
 
     asyncio.run(run())
+
+
+def test_moq_subscriber_get_next_object_bridges_owner_loop() -> None:
+    from moq.sub.subscriber import MOQSubscriber
+
+    subscriber = MOQSubscriber("127.0.0.1", 9003)
+    owner_loop = asyncio.new_event_loop()
+    owner_ready = threading.Event()
+    keepalive_task: asyncio.Task[None] | None = None
+
+    def run_owner_loop() -> None:
+        nonlocal keepalive_task
+
+        async def keepalive() -> None:
+            while True:
+                try:
+                    await asyncio.sleep(0.01)
+                except asyncio.CancelledError:
+                    break
+
+        asyncio.set_event_loop(owner_loop)
+        keepalive_task = owner_loop.create_task(keepalive())
+        owner_ready.set()
+        try:
+            owner_loop.run_forever()
+        finally:
+            asyncio.set_event_loop(None)
+
+    owner_thread = threading.Thread(target=run_owner_loop, daemon=True)
+    owner_thread.start()
+    assert owner_ready.wait(timeout=1.0)
+
+    async def prepare_object() -> None:
+        subscriber._reset_object_queue_for_current_loop()
+        await subscriber._put_received_object(
+            ReceivedObject(
+                track_alias=1,
+                group_id=0,
+                object_id=0,
+                publisher_priority=128,
+                payload=b"payload",
+                object_status=ObjectStatus.NORMAL,
+            )
+        )
+
+    try:
+        asyncio.run_coroutine_threadsafe(prepare_object(), owner_loop).result(timeout=1.0)
+
+        async def read_object() -> ReceivedObject | None:
+            return await subscriber.get_next_object(timeout=1.0)
+
+        obj = asyncio.run(read_object())
+
+        assert obj is not None
+        assert obj.payload == b"payload"
+
+        callback_received = threading.Event()
+        callback_payloads: list[bytes] = []
+
+        def on_object_received(obj: ReceivedObject) -> None:
+            callback_payloads.append(obj.payload)
+            callback_received.set()
+
+        subscriber.set_handlers(on_object_received=on_object_received)
+
+        async def prepare_callback_object() -> None:
+            await subscriber._put_received_object(
+                ReceivedObject(
+                    track_alias=1,
+                    group_id=0,
+                    object_id=1,
+                    publisher_priority=128,
+                    payload=b"callback-payload",
+                    object_status=ObjectStatus.NORMAL,
+                )
+            )
+
+        asyncio.run_coroutine_threadsafe(prepare_callback_object(), owner_loop).result(timeout=1.0)
+
+        assert callback_received.wait(timeout=1.0)
+        assert callback_payloads == [b"callback-payload"]
+    finally:
+        async def cancel_owner_tasks() -> None:
+            tasks: list[asyncio.Task[None]] = []
+            if keepalive_task is not None:
+                tasks.append(keepalive_task)
+            if subscriber._object_task is not None:
+                tasks.append(subscriber._object_task)
+            for task in tasks:
+                task.cancel()
+            if tasks:
+                await asyncio.gather(*tasks, return_exceptions=True)
+
+        if owner_loop.is_running():
+            asyncio.run_coroutine_threadsafe(cancel_owner_tasks(), owner_loop).result(timeout=1.0)
+        owner_loop.call_soon_threadsafe(owner_loop.stop)
+        owner_thread.join(timeout=1.0)
+        if not owner_loop.is_running():
+            owner_loop.close()

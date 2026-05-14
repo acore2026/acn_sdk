@@ -4,6 +4,7 @@ Subscriber for MOQT protocol.
 """
 
 import asyncio
+import concurrent.futures
 import logging
 from typing import Optional, Callable, Dict, List
 from dataclasses import dataclass
@@ -83,8 +84,12 @@ class MOQSubscriber:
         self._on_subscription_rejected: Optional[Callable[[FullTrackName, str], None]] = None
         self._on_subscription_ended: Optional[Callable[[FullTrackName, int, str], None]] = None
         
-        # Object delivery queue
-        self._object_queue: asyncio.Queue = asyncio.Queue()
+        # Object delivery queue. It is created on the loop that owns the
+        # subscriber connection so callers can safely construct subscribers
+        # before handing them to a background event-loop thread.
+        self._object_queue: Optional[asyncio.Queue[ReceivedObject]] = None
+        self._object_loop: Optional[asyncio.AbstractEventLoop] = None
+        self._object_task: Optional[asyncio.Task[None]] = None
         self._control_buffer = b""
         self._request_stream_ids: Dict[int, int] = {}  # request_id -> stream_id
         self._request_stream_buffers: Dict[int, bytearray] = {}
@@ -117,6 +122,7 @@ class MOQSubscriber:
         self._on_subscription_accepted = on_subscription_accepted
         self._on_subscription_rejected = on_subscription_rejected
         self._on_subscription_ended = on_subscription_ended
+        self._start_object_processor_if_needed()
     
     async def connect(self) -> bool:
         """Connect to relay."""
@@ -144,6 +150,7 @@ class MOQSubscriber:
             )
             self._session.set_send_callback(self._send_data)
             self._local_control_stream_id = await self._client.open_stream(unidirectional=True)
+            self._reset_object_queue_for_current_loop()
             
             # Send SETUP
             await self._session.send_setup(Role.SUBSCRIBER)
@@ -154,7 +161,7 @@ class MOQSubscriber:
                 self._on_connected()
             
             # Start object processing task
-            asyncio.create_task(self._process_objects())
+            self._start_object_processor_if_needed()
             
             return True
             
@@ -169,6 +176,9 @@ class MOQSubscriber:
         if self._session:
             self._session.close()
             self._session = None
+        if self._object_task is not None and not self._object_task.done():
+            self._object_task.cancel()
+        self._object_task = None
         self._local_control_stream_id = None
         self._peer_control_stream_id = None
         self._request_stream_ids = {}
@@ -686,7 +696,7 @@ class MOQSubscriber:
                     object_status=obj.object_status
                 )
 
-                await self._object_queue.put(received_obj)
+                await self._put_received_object(received_obj)
         except Exception as e:
             logger.warning(f"Failed to handle subgroup stream: {e}")
     
@@ -733,7 +743,7 @@ class MOQSubscriber:
                         object_status=ObjectStatus.NORMAL
                     )
                     
-                    await self._object_queue.put(received_obj)
+                    await self._put_received_object(received_obj)
                     logger.debug(
                         f"Fetch object received: group={fetch_obj.group_id}, object={fetch_obj.object_id}"
                     )
@@ -915,7 +925,7 @@ class MOQSubscriber:
                 object_status=datagram.header.object_status
             )
             
-            await self._object_queue.put(received_obj)
+            await self._put_received_object(received_obj)
             
         except Exception as e:
             logger.warning(f"Failed to handle datagram: {e}")
@@ -942,7 +952,7 @@ class MOQSubscriber:
         """Process received objects from queue."""
         while True:
             try:
-                obj = await self._object_queue.get()
+                obj = await self._get_received_object()
                 
                 if self._on_object_received:
                     self._on_object_received(obj)
@@ -962,7 +972,82 @@ class MOQSubscriber:
     
     async def get_next_object(self, timeout: Optional[float] = None) -> Optional[ReceivedObject]:
         """Get next received object from queue."""
+        object_loop = self._object_loop
+        if object_loop is not None and object_loop is not asyncio.get_running_loop():
+            future = asyncio.run_coroutine_threadsafe(
+                self._get_next_object_on_owner_loop(timeout),
+                object_loop,
+            )
+            try:
+                while not future.done():
+                    await asyncio.sleep(0.01)
+                return future.result()
+            except asyncio.CancelledError:
+                future.cancel()
+                raise
+            except RuntimeError:
+                future.cancel()
+                raise
+            except concurrent.futures.CancelledError:
+                return None
+        return await self._get_next_object_on_owner_loop(timeout)
+
+    def _reset_object_queue_for_current_loop(self) -> None:
+        """Create a fresh object queue owned by the current running loop."""
+        self._object_loop = asyncio.get_running_loop()
+        self._object_queue = asyncio.Queue()
+
+    def _ensure_object_queue(self) -> asyncio.Queue[ReceivedObject]:
+        """Return an object queue for the current loop when no owner exists yet."""
+        queue = self._object_queue
+        if queue is None:
+            self._reset_object_queue_for_current_loop()
+            queue = self._object_queue
+        assert queue is not None
+        return queue
+
+    def _start_object_processor_if_needed(self) -> None:
+        """Start object callbacks on the queue owner loop when a handler exists."""
+        if not self._on_object_received:
+            return
+        if self._object_task is not None and not self._object_task.done():
+            return
+        object_loop = self._object_loop
+        if object_loop is None or object_loop.is_closed():
+            return
+
         try:
-            return await asyncio.wait_for(self._object_queue.get(), timeout=timeout)
+            running_loop = asyncio.get_running_loop()
+        except RuntimeError:
+            running_loop = None
+
+        if running_loop is object_loop:
+            self._object_task = asyncio.create_task(self._process_objects())
+            return
+
+        object_loop.call_soon_threadsafe(self._start_object_processor_on_owner_loop)
+
+    def _start_object_processor_on_owner_loop(self) -> None:
+        """Create the object processor task while running on the owner loop."""
+        if not self._on_object_received:
+            return
+        if self._object_task is None or self._object_task.done():
+            self._object_task = asyncio.create_task(self._process_objects())
+
+    async def _put_received_object(self, obj: ReceivedObject) -> None:
+        """Put a received object on the subscriber's owner-loop queue."""
+        await self._ensure_object_queue().put(obj)
+
+    async def _get_received_object(self) -> ReceivedObject:
+        """Read one object from the subscriber's owner-loop queue."""
+        return await self._ensure_object_queue().get()
+
+    async def _get_next_object_on_owner_loop(
+        self,
+        timeout: Optional[float],
+    ) -> Optional[ReceivedObject]:
+        """Get the next object while running on the queue owner's loop."""
+        try:
+            return await asyncio.wait_for(self._get_received_object(), timeout=timeout)
         except asyncio.TimeoutError:
             return None
