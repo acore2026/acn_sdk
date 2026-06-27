@@ -56,6 +56,7 @@ start-mock-services
 - [Architecture](docs/ARCHITECTURE.md)
 - [API](docs/API.md)
 - [Examples Scenarios](docs/EXAMPLES_SCENARIOS.md)
+- [Test Report](docs/TEST_REPORT.md)
 - [SDD Spec](docs/sdd/spec.md)
 - [SDD Plan](docs/sdd/plan.md)
 
