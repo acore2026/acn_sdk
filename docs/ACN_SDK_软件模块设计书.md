@@ -3,7 +3,6 @@
 版本：`v0.1.0`
 
 适用范围：`acn_sdk` 机器人端 Python SDK
-
 ---
 
 ## 1. 概述
@@ -43,7 +42,7 @@
 3. 任务与设备管控
    - 任务执行请求
    - 任务协同请求、接受、启动
-   - 任务终止、任务状态查询、任务列表查询
+   - 单任务终止、任务终止广播、任务状态查询、任务列表查询
    - 网络入网/退网、设备状态在线/离线切换
 
 4. 运行时辅助能力
@@ -51,6 +50,7 @@
    - pipeline log 上报
    - EC 密钥对生成与复用
    - 回调注册与消息分发
+   - 配置热更新与连接重建
 
 ### 1.3 设计目标
 
@@ -100,6 +100,7 @@
 - 进程视图：HTTP 同步调用、WebSocket 背景监听线程、MoQ 事件循环线程、任务线程池。
 - 物理视图：本地配置文件、密钥文件、日志目录、HTTP/WebSocket/MoQ 外部端点。
 - 场景视图：身份注册、入网、任务执行、协同、MoQ 数据传输、去注册。
+- 规格视图：`docs/sdd/spec.md` 和 `docs/sdd/plan.md` 作为后续规格驱动开发的基线。
 
 ---
 
@@ -121,7 +122,8 @@ graph TD
     SDK --> TR[PipelineLogReporter]
     SDK --> TM[TaskManager]
     SDK --> CFG[SDKConfig / settings]
-    SDK --> CR[crypto / logging utils]
+    SDK --> CR[crypto]
+    SDK --> LU[logging_config / logging_utils]
 
     subgraph Core[core 层]
         CFG
@@ -143,12 +145,12 @@ graph TD
 
     HC --> CU[format_json_for_log]
     WC --> CU
-    MQ --> CU
     TR --> CU
 
     IM --> FS[(identity.json)]
     CR --> PK[(EC keypair files)]
-    TR --> LOG[(logs/acn_sdk.log)]
+    LU --> LOG[(logs/acn_sdk.log)]
+    TR --> WEBUI[Web UI / pipeline logs]
     CFG --> YML[(config/config.yaml)]
 
     HC --> HTTP[HTTP / AcnAgent / ARF]
@@ -163,6 +165,7 @@ graph TD
 - `core` 层定义数据模型、配置和跨模块公共逻辑。
 - `identity`、`network`、`task`、`credential`、`reporting` 是围绕核心场景拆分出的功能层。
 - 文件系统与外部网络端点均在架构图中显式出现，说明 SDK 同时具有“本地状态持久化”和“远程服务协同”两类职责。
+- `PipelineLogReporter` 是尽力而为的链路上报组件，请求失败不会阻断 SDK 主流程。
 
 ### 2.2 分层描述
 
@@ -177,8 +180,10 @@ graph TD
 - `query_agent_list`
 - `join_network`
 - `logout_network`
+- `query_network_status`
 - `request_task_execution`
 - `request_terminate_task`
+- `broadcast_terminate_task`
 - `task_info_report`
 - `request_task_collaboration`
 - `accept_task_collaboration`
@@ -220,6 +225,7 @@ graph TD
 - `HttpClient`：对 HTTP POST 请求做统一封装。
 - `WebSocketClient`：对 WebSocket 连接、发送、接收做统一封装。
 - `MoQClient`：对 MoQ publisher/subscriber 的连接、发布、订阅、对象发送做统一封装。
+- `MoQClient.fetch()`：对订阅方历史对象拉取进行封装，当前由 `SUBSCRIBE_TRACK` 的回调策略触发。
 
 这一层是协议适配边界，原则上不包含业务决策，只处理协议和连接语义。
 
@@ -229,7 +235,7 @@ graph TD
 
 - `IdentityManager`：身份状态持久化。
 - `CredentialIssuer`：能力 VC 签发模拟。
-- `PipelineLogReporter`：将关键调用路径上报到 Web UI。
+- `PipelineLogReporter`：将关键调用路径以固定 `/acn/v3/pipeline-logs` 入口上报到 Web UI。
 - `TaskManager`：后台任务线程池管理。
 - `SDKConfig`：配置加载/保存。
 - `crypto`：密钥对生成、签名。
@@ -273,8 +279,8 @@ graph TD
 职责：
 
 - HTTP：身份申请、能力注册、任务执行、任务终止、协同发现、查询操作
-- WebSocket：入网握手、消息控制、轨道订阅、协同确认、任务启动/断开
-- MoQ：任务对象发布和订阅
+- WebSocket：入网握手、消息控制、轨道订阅通知、协同确认、任务启动、任务终止通知和断开
+- MoQ：任务对象发布、订阅、历史 fetch 和对象回调
 
 #### 2.3.3 接口适配组件
 
@@ -321,6 +327,10 @@ graph TD
   - 功能：组合 MoQ track 的内部键
   - 返回：`"{namespace}::{track}"`
 
+- `_subscribe_track_mode_for(track_info, track_modes)`
+  - 功能：为单个 track 选择订阅模式
+  - 返回：`"subscribe"` 或 `"fetch"`
+
 - `_summarize_task_entry(task_id, task_entry)`
   - 功能：将任务内部状态转换为对外可查询结构
   - 返回：JSON 可序列化的字典
@@ -334,6 +344,7 @@ graph TD
   - `/acn-agent/v1/agent-deletions`
   - `/acn-agent/v1/task-executions`
   - `/acn-agent/v1/task-execution-terminations`
+  - `/acn-agent/v1/task-termination-broadcasts`
   - `/acn-agent/v1/owner-agents`
 
 - HTTP 到 `ARF`
@@ -351,10 +362,13 @@ graph TD
   - `TASK_REQUEST_COLLABORATION`
   - `DISCOVER_RESULT`
   - `TASK_ASSIGNED`
+  - `TASK_TERMINATION`
+  - `CLEAR`
 
 - MoQ 到 relay
   - publish / unpublish track
   - send_object
+  - fetch track history
   - subscribe / unsubscribe track
 
 ### 2.5 技术选型
@@ -398,6 +412,7 @@ graph TD
 - `MoQClient` 的 `_create_moq_client()` 是明确的工厂封装，便于在测试中替换为 `RecordingMoQClient`。
 - `PipelineLogReporter` 可在测试中替换为记录器，不依赖真实 Web UI。
 - `ensure_ec_keypair()` 和签名函数具备确定性输入，可直接做加密验证。
+- `IdentityManager` 支持从旧版单能力字段 `capability_vc` 迁移到当前 `capability_vcs` 列表，便于做兼容性测试。
 
 #### 2.6.3 测试阶段的可测试性要求
 
@@ -514,6 +529,7 @@ flowchart TD
 - 身份申请的关键输入来自本地密钥对和设备静态信息。
 - 签名粒度是 `timestamp`，与测试中的签名验证保持一致。
 - 成功后身份状态必须持久化，以支持重启后的续用。
+- `AcnSDK` 初始化时会清理配置指向的旧身份缓存文件，当前行为更偏向 demo/测试隔离；如果后续要支持跨进程复用身份，需要先调整该约束。
 
 #### 3.2.2 数字身份与能力管理
 
@@ -603,6 +619,8 @@ flowchart TD
 - `SDKTaskMixin.request_task_collaboration()`
 - `SDKTaskMixin.accept_task_collaboration()`
 - `SDKTaskMixin.start_task_collaboration()`
+- `SDKTaskMixin.request_terminate_task()`
+- `SDKTaskMixin.broadcast_terminate_task()`
 
 流程图如下：
 
@@ -639,13 +657,23 @@ flowchart TD
     T --> W[start_task_collaboration]
     W --> X2[发送 START_TASK]
     X2 --> Y[返回 dst_agent_id]
+
+    I --> Z[request_terminate_task]
+    Z --> Z1[HTTP POST /acn-agent/v1/task-execution-terminations]
+    Z1 --> Z2[停止任务关联 publish/subscribe track]
+    Z2 --> Z3[任务状态置为 Terminated]
+
+    I --> B1[broadcast_terminate_task]
+    B1 --> B2[HTTP POST /acn-agent/v1/task-termination-broadcasts]
+    B2 --> B3[返回广播结果]
 ```
 
 说明：
 
 - `task_info_report()` 体现控制面与数据面的联动：首次发布 track 时先发送 `PUBLISH_TRACK`，再发送 MoQ 对象。
 - `_task_registry` 是任务生命周期的核心状态容器，记录任务描述、状态、已发布/订阅的 track。
-- 任务终止时会调用 `_stop_task_tracks()`，防止资源泄漏。
+- 单任务终止时会调用 `_stop_task_tracks()`，防止资源泄漏。
+- 任务终止广播只负责向 AcnAgent 发送广播请求，不直接修改本地任务状态。
 
 #### 3.2.5 网络消息接收与回调分发
 
@@ -664,24 +692,32 @@ flowchart TD
     A[开始: handle_network_message] --> B[解析 JSON 或直接使用 dict]
     B --> C[验证 WebSocketMessage]
     C --> D{message_type}
-    D -- SUBSCRIBE_TRACK --> E[订阅对应 MoQ track]
+    D -- SUBSCRIBE_TRACK --> E[触发 on_subscribe_track_received]
     D -- CLEAR --> F[清理身份、网络、任务状态]
     D -- TASK_REQUEST_COLLABORATION --> G[记录 requesting_agent_id]
     D -- DISCOVER_RESULT --> H[分发 discover 回调]
     D -- TASK_ASSIGNED --> I[触发 request_task_execution]
     D -- START_TASK --> J[分发 start 回调]
-    E --> K[返回成功]
+    D -- TASK_TERMINATION --> J2[分发 terminate 回调]
+    E --> E1{track 模式}
+    E1 -- fetch --> E2[MoQ fetch 历史对象]
+    E1 -- subscribe --> E3[MoQ subscribe]
+    E2 --> E3
+    E3 --> K[返回成功]
     F --> K
     G --> H
     H --> K
     I --> K
     J --> K
+    J2 --> K
 ```
 
 说明：
 
 - `TASK_REQUEST_COLLABORATION` 会写入 `_task_registry`，为后续 `accept_task_collaboration()` 提供 `requesting_agent_id`。
 - `CLEAR` 的语义是全量清理，因此要求终止处理中的任务并断开连接。
+- `SUBSCRIBE_TRACK` 支持业务回调按 `"{namespace}::{track}"` 返回 `subscribe` 或 `fetch` 模式；`fetch` 模式先拉取历史对象，再建立实时订阅。
+- `TASK_ASSIGNED` 会检查 `assigned_agents`，仅当本机被分配或列表为空/无效时触发本地 `request_task_execution()`。
 
 #### 3.2.6 去注册与资源回收
 
@@ -700,19 +736,25 @@ flowchart TD
     B -- 否 --> X[返回失败]
     B -- 是 --> C{是否存在 Processing 任务}
     C -- 是 --> Y[返回失败: 任务处理中]
-    C -- 否 --> D[发送去注册/退网请求]
-    D --> E{当前是否 online}
-    E -- 是 --> F[发送 DISCONNECTION WebSocket 消息]
-    E -- 否 --> G[跳过控制面断开消息]
-    F --> H[清理身份、连接、任务、track 状态]
-    G --> H
-    H --> I[返回成功]
+    C -- 否 --> D{调用类型}
+    D -- logout_network --> E[发送 DISCONNECTION]
+    E --> F[disconnect_all close_http=false]
+    F --> G[network_status=offline, 保留身份]
+    G --> H[返回成功]
+    D -- deregister_agent 且 online --> I[发送 DISCONNECTION]
+    I --> J[disconnect_all close_http=false, clear_task_registry=false]
+    D -- deregister_agent 且 offline --> K[跳过 DISCONNECTION]
+    J --> L[HTTP POST /acn-agent/v1/agent-deletions]
+    K --> L
+    L --> M[clear identity + network + task registry]
+    M --> N[返回成功]
 ```
 
 说明：
 
 - 业务上强制要求“处理中任务不可直接退网/去注册”，避免状态机不一致。
-- 清理路径必须先停任务轨道，再断开连接，再置为 offline。
+- 退网只断开网络资源并保留本地身份。
+- 去注册在线时先发送 `DISCONNECTION` 并释放网络资源，再执行 HTTP 去注册请求；成功后清理身份、连接、任务和 track 状态。
 
 ### 3.3 状态机设计
 
@@ -724,9 +766,10 @@ stateDiagram-v2
     Unregistered --> Registered: register_agent_info success
     Registered --> CapabilityReady: register_agent_attribute success
     CapabilityReady --> Online: join_network success
-    Online --> Terminating: request_terminate_task / logout / deregister
-    Terminating --> Registered: stop_task_tracks + disconnect
+    Online --> Online: request_terminate_task success
+    Online --> Registered: logout_network success
     Registered --> Unregistered: deregister_agent success
+    Online --> Unregistered: deregister_agent success
     Online --> Unregistered: clear / clear_all / websocket CLEAR
 ```
 
@@ -736,7 +779,8 @@ stateDiagram-v2
 - `Registered`：已有 `agent_id` 和 `vc0`。
 - `CapabilityReady`：已注册能力 VC，具备可协同能力。
 - `Online`：已完成网络入网，可进行任务执行和协同。
-- `Terminating`：执行终止、退网、去注册清理过程。
+- 任务终止不会导致设备离线，只会停止任务关联 track 并把任务状态置为 `Terminated`。
+- `logout_network()` 保留本地身份，`deregister_agent()` 和 `CLEAR` 会清空本地身份。
 
 #### 3.3.2 设备连接状态机
 
@@ -801,6 +845,7 @@ classDiagram
         +query_task_list()
         +request_task_execution()
         +request_terminate_task()
+        +broadcast_terminate_task()
         +task_info_report()
         +request_task_collaboration()
         +accept_task_collaboration()
@@ -833,6 +878,7 @@ classDiagram
         +deregister_agent()
         +request_task_execution()
         +request_terminate_task()
+        +broadcast_terminate_task()
         +request_task_collaboration()
         +query_agent_info()
         +query_agent_list()
@@ -851,8 +897,11 @@ classDiagram
         +publish()
         +unpublish()
         +send_object()
+        +fetch()
         +subscribe()
         +unsubscribe()
+        +is_published()
+        +is_subscribed()
         +disconnect()
     }
 
@@ -945,6 +994,8 @@ classDiagram
 - `TASK_REQUEST_COLLABORATION`
 - `DISCOVER_RESULT`
 - `START_TASK`
+- `TASK_TERMINATION`
+- `SUBSCRIBE_TRACK` 的 `fetch` / `subscribe` 选择
 - `on_message_received` 的 MoQ 对象回调
 
 模式价值：
@@ -953,7 +1004,30 @@ classDiagram
 - 单元测试可以直接注入 lambda 或 mock 函数，验证回调触发顺序。
 - 新增消息类型时，只需扩展分发逻辑，不需要改变业务调用侧签名。
 
-#### 3.6.2 工厂方法
+#### 3.6.2 策略模式
+
+当前实现中 `on_subscribe_track_received` 回调体现了轻量策略模式。
+
+对应代码：
+
+- `AcnSDK.register_callbacks(on_subscribe_track_received=...)`
+- `SDKNetworkMixin._dispatch_subscribe_track_callback()`
+- `SDKNetworkMixin._normalize_subscribe_track_modes()`
+- `SDKNetworkMixin._subscribe_track_mode_for()`
+
+应用场景：
+
+- 业务侧可按 `"{namespace}::{track}"` 选择接收策略。
+- 默认策略为 `subscribe`。
+- 指定 `fetch` 时，SDK 先调用 `MoQClient.fetch()` 拉取历史对象，再调用 `MoQClient.subscribe()` 建立实时订阅。
+
+约束：
+
+- 回调返回值只能是 `None` 或 `dict[str, str]`。
+- 字典 key 和 value 必须都是字符串。
+- value 只能是 `subscribe` 或 `fetch`。
+
+#### 3.6.3 工厂方法
 
 当前实现中已存在轻量的工厂方法封装：
 
@@ -972,7 +1046,7 @@ classDiagram
 - 便于测试替身注入
 - 适合协议适配扩展
 
-#### 3.6.3 说明：未采用全局单例
+#### 3.6.4 说明：未采用全局单例
 
 当前 SDK 没有采用全局单例模式，这是合理的：
 
@@ -986,68 +1060,11 @@ classDiagram
 - 身份与任务状态切换必须先校验 `agent_id`。
 - 任务未结束前不得退网或去注册。
 - 发送 MoQ 对象前，track 必须已经 `publish()`。
-- 消息回调必须只接收单个 payload 参数，否则会触发 `TypeError`。
-
-### 3.8 设计改进建议
-
-以下优化基于当前实现痛点，具备落地性，建议作为后续版本技术决策候选项。
-
-#### 建议 1：引入显式协议接口和依赖注入
-
-问题：
-
-- 当前 `AcnSDK` 直接持有 `HttpClient`、`WebSocketClient`、`MoQClient` 的具体实现。
-- 测试虽然能通过 monkeypatch 替换，但从架构上仍偏“具体类耦合”。
-
-改进思路：
-
-- 抽象出 `IHttpClient`、`IWebSocketClient`、`IMoQClient`、`IPipelineLogReporter` 等协议接口。
-- 通过构造参数或工厂对象注入，而不是在 `_apply_config()` 内部硬编码创建。
-
-预期效果：
-
-- 测试可完全脱离 monkeypatch
-- 更容易替换重试版/异步版/安全版实现
-- 降低未来协议升级成本
-
-#### 建议 2：将 MoQ 和 WebSocket 事件处理显式化为命令队列
-
-问题：
-
-- 当前网络监听依赖后台线程 + 轮询/receive，复杂场景下需要人工保证关闭顺序。
-- 任务清理、track 解绑和回调触发存在跨线程协作风险。
-
-改进思路：
-
-- 将收到的控制面消息转换为标准命令对象，统一投递到内部队列。
-- 使用单一消费者处理状态变更和资源回收。
-
-预期效果：
-
-- 降低并发竞争条件
-- 更容易测试消息序列
-- 便于后续扩展重连、重放和离线缓存
-
-#### 建议 3：增强身份与任务状态持久化的原子性和容错性
-
-问题：
-
-- `IdentityManager.save()` 当前是直接写 JSON 文件。
-- 崩溃或断电时可能出现部分写入或状态损坏。
-
-改进思路：
-
-- 使用临时文件 + 原子 rename。
-- 对 identity 文件增加版本号和校验字段。
-- 可选支持本地加密存储。
-
-预期效果：
-
-- 提升断电恢复能力
-- 提升密钥与身份数据安全性
-- 便于后续做审计和版本兼容
-
----
+- 普通控制面消息回调必须只接收单个 payload 参数，否则会触发 `TypeError`。
+- `on_message_received` 必须接收 `namespace`、`track`、`payload` 三个参数。
+- `on_subscribe_track_received` 返回非法模式时不执行 MoQ 操作。
+- `TASK_ASSIGNED` 只有在本机位于 `assigned_agents` 中，或该字段缺失/无有效列表时，才触发本地任务执行。
+- `PipelineLogReporter` 失败不影响主流程，因此 pipeline log 只作为观测能力，不作为业务成功条件。
 
 ## 4. 测试策略
 
@@ -1077,8 +1094,9 @@ classDiagram
 - 关键接口
   - 身份注册/能力注册
   - 入网/退网
-  - 任务执行/终止
-  - MoQ publish/subscribe
+- 任务执行/终止
+- MoQ publish/subscribe/fetch
+- 配置重载、身份缓存清理、旧身份文件兼容
 
 #### 4.1.2 测试工具
 
@@ -1099,18 +1117,24 @@ classDiagram
 当前仓库已通过测试验证以下行为：
 
 - 身份申请和能力注册的签名、返回值、持久化
+- 本地与远端 agent 信息查询、owner 维度 agent 列表查询
 - HTTP 请求日志格式
 - WebSocket 日志格式
-- MoQ 连接、发布、订阅、断开清理
+- MoQ 连接、发布、订阅、fetch、断开清理和跨线程串行访问
 - 配置热更新
 - 任务状态与轨道状态同步
+- 任务终止广播请求路径和 `force` 字段格式
+- `SUBSCRIBE_TRACK` 回调策略、非法模式拒绝、重复 track 去重
+- `CLEAR` 和 `clear_all()` 强制清理处理中任务
+- `HttpClient` 禁用系统代理继承
+- EC 密钥生成、旧 RSA 密钥替换和能力 VC 发行者签名验证
 
 ### 4.2 集成测试策略
 
 #### 4.2.1 测试场景
 
 - 身份申请 -> 能力注册 -> 入网 -> 任务执行 -> 协同 -> MoQ 上报 -> 终止 -> 去注册
-- `TASK_REQUEST_COLLABORATION`、`DISCOVER_RESULT`、`START_TASK`、`SUBSCRIBE_TRACK` 的消息闭环
+- `TASK_REQUEST_COLLABORATION`、`DISCOVER_RESULT`、`START_TASK`、`SUBSCRIBE_TRACK`、`TASK_TERMINATION` 的消息闭环
 - `CLEAR` 消息触发的全量状态清理
 - 网络异常和服务异常下的回滚
 
@@ -1123,7 +1147,8 @@ classDiagram
 5. 执行网络入网。
 6. 发起任务执行与协同。
 7. 验证 MoQ track 发布/订阅和对象回调。
-8. 执行退网/去注册并验证资源清理。
+8. 验证任务终止、任务终止广播和 track 清理。
+9. 执行退网/去注册并验证资源清理。
 
 #### 4.2.3 测试环境要求
 
@@ -1171,6 +1196,8 @@ classDiagram
 
 - `examples/demo_task_flow.py`
 - `examples/demo_task_flow_realtime.py`
+- `examples/demo_task_initiator*.py`
+- `examples/demo_task_collaborator*.py`
 
 测试内容：
 
@@ -1191,6 +1218,7 @@ classDiagram
 - 控制面和数据面联动成功
 - 协同消息驱动任务状态推进
 - 终止后 track 被正确退订和取消发布
+- callback 版 demo 可按 track 选择 `fetch` 或 `subscribe` 接收模式
 
 异常场景：
 
@@ -1218,6 +1246,7 @@ classDiagram
 - 事件顺序是否符合流程设计
 - 日志是否包含足够的诊断信息
 - 配置热更新是否真正影响运行中的实例
+- 旧 identity 文件、重复能力、重复订阅和非法回调返回值是否被正确处理
 
 ---
 
@@ -1339,27 +1368,3 @@ if ok:
 建议每个实例使用独立目录，避免多进程并发写同一身份文件。
 
 ---
-
-## 附录：与代码实现的对应关系
-
-以下文件是本设计书的主要依据：
-
-- [acn_sdk/sdk.py](/home/acn/zxy/acn_sdk/sdk.py)
-- [acn_sdk/core/identity_service.py](/home/acn/zxy/acn_sdk/core/identity_service.py)
-- [acn_sdk/core/network_service.py](/home/acn/zxy/acn_sdk/core/network_service.py)
-- [acn_sdk/core/task_service.py](/home/acn/zxy/acn_sdk/core/task_service.py)
-- [acn_sdk/core/common.py](/home/acn/zxy/acn_sdk/core/common.py)
-- [acn_sdk/core/models.py](/home/acn/zxy/acn_sdk/core/models.py)
-- [acn_sdk/core/settings.py](/home/acn/zxy/acn_sdk/core/settings.py)
-- [acn_sdk/identity/identity_manager.py](/home/acn/zxy/acn_sdk/identity/identity_manager.py)
-- [acn_sdk/network/http_client.py](/home/acn/zxy/acn_sdk/network/http_client.py)
-- [acn_sdk/network/websocket_client.py](/home/acn/zxy/acn_sdk/network/websocket_client.py)
-- [acn_sdk/network/moq_client.py](/home/acn/zxy/acn_sdk/network/moq_client.py)
-- [acn_sdk/credential/credential_issuer.py](/home/acn/zxy/acn_sdk/credential/credential_issuer.py)
-- [acn_sdk/reporting/pipeline_log_reporter.py](/home/acn/zxy/acn_sdk/reporting/pipeline_log_reporter.py)
-- [tests/test_identity_flow.py](/home/acn/zxy/tests/test_identity_flow.py)
-- [tests/test_moq_client.py](/home/acn/zxy/tests/test_moq_client.py)
-- [tests/test_logging_format.py](/home/acn/zxy/tests/test_logging_format.py)
-- [docs/QUICK_START.md](/home/acn/zxy/docs/QUICK_START.md)
-- [docs/ARCHITECTURE.md](/home/acn/zxy/docs/ARCHITECTURE.md)
-
