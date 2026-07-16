@@ -1,0 +1,51 @@
+server:
+  # Android 需要能够访问此地址；监听所有网卡时保持 0.0.0.0。
+  host: 0.0.0.0
+  port: 9011
+  api_prefix: /sdk
+
+python_sdk:
+  # Python SDK 源码目录。默认假设 acn_sdk 和 gateway 同级。
+  source_path: ../acn_sdk
+  # Gateway 自动生成 SDK 配置、身份、密钥和日志的目录。
+  runtime_dir: ./runtime
+  log_level: INFO
+  network:
+    network_ip: 101.245.78.174
+    acn_agent_port: 9010
+    arf_port: 9001
+    agent_gw_ws_port: 9002
+    agent_gw_moq_port: 9003
+    web_ui_port: 9005
+    path: /ws
+
+# 以下均由 Gateway 使用，Android 不传这些参数。
+agent:
+  name: AliceAgent
+  owner: "+8613800138000"
+  description: IMT2030 Android Gateway Agent
+  priority: 1
+  metadata:
+    platform: python-gateway
+    controller: android
+
+capabilities:
+  - 可疑人员识别
+  - 目标跟踪
+
+task:
+  description: 执行 IMT2030 测试任务
+  collaboration_description: Gateway 自动协同任务
+  termination_reason: Android 触发广播结束任务
+  termination_force: false
+
+deregister:
+  reason: Android 触发去注册
+
+callbacks:
+  discovery_selection: first
+  # 列出的 track 使用 fetch；其他 track 默认 subscribe。
+  fetch_tracks:
+    - Location
+  # log 或 discard；MoQ 数据始终只在 Python Gateway 内消费。
+  moq_message_policy: log

@@ -1,0 +1,11 @@
+.gradle/
+.gradle-home/
+.gradle-tmp/
+.kotlin/
+**/build/
+local.properties
+gateway/config.yaml
+gateway/runtime/
+gateway/**/__pycache__/
+gateway/.pytest_cache/
+*.pyc
