@@ -1,0 +1,50 @@
+server:
+  # Android 需要能够访问此地址；监听所有网卡时保持 0.0.0.0。
+  host: 0.0.0.0
+  port: 9011
+  api_prefix: /sdk
+
+python_sdk:
+  # Python SDK 源码目录。
+  source_path: ../acn_sdk
+  # Gateway 自动生成 SDK 配置、身份、密钥和日志的目录。
+  runtime_dir: ./runtime
+  log_level: INFO
+  network:
+    network_ip: localhost
+    acn_agent_port: 9010
+    arf_port: 9001
+    agent_gw_ws_port: 9002
+    agent_gw_moq_port: 9003
+    web_ui_port: 9005
+    path: /ws
+
+# 以下均由 Gateway 使用，Android 不传这些参数。
+agent:
+  name: AR glasses
+  owner: "+8613800138000"
+  description: IMT2030 AR glasses
+  priority: 1
+  metadata: {}
+
+
+capabilities:
+  - 视觉共享
+  - 远程操控
+
+task:
+  description: 执行 IMT2030 任务
+  collaboration_description: 协同任务
+  termination_reason: 任务结束
+  termination_force: false
+
+deregister:
+  reason: 触发去注册
+
+callbacks:
+  discovery_selection: first
+  # 列出的 track 使用 fetch；其他 track 默认 subscribe。
+  fetch_tracks:
+    - Location
+  # log 或 discard；MoQ 数据始终只在 Python Gateway 内消费。
+  moq_message_policy: log
