@@ -34,6 +34,7 @@ cp config.example.yaml config.yaml
 - `python_sdk.network`：ACN、ARF、AgentGW、MoQ、Web UI 地址和端口；
 - `agent`：身份注册信息；
 - `capabilities`：能力列表；
+- `task.task_id`：固定任务 ID，Android 执行任务时不传，由 Gateway 使用该值；
 - `task`：任务、协同和广播结束参数；
 - `deregister.reason`：去注册原因；
 - `callbacks.fetch_tracks`：需要使用 `fetch` 的 MoQ track，其余默认 `subscribe`。
@@ -65,6 +66,7 @@ python_sdk:
 - `gateway/config.yaml` 的 `python_sdk.source_path`：原版 Python SDK 源码路径；同级部署时填 `../acn_sdk`。
 - `gateway/config.yaml` 的 `python_sdk.runtime_dir`：Gateway 运行时目录；默认 `./runtime`，会解析到 `gateway/runtime`。
 - `gateway/config.yaml` 的 `python_sdk.network.network_ip`：ACN 网络组件地址；组件和 Gateway 在同一台主机时可填 `localhost`，否则填实际 IP。
+- `gateway/config.yaml` 的 `task.task_id`：固定任务 ID；如需换任务 ID，只改这里。
 - Android 里的 `GatewayConfig(baseUrl = "...")`：填写 Gateway 主机对 Android 可访问的 IP 和端口，例如 `http://192.168.1.10:9011`。
 - `gateway/requirements.txt` 的 `-e ../acn_sdk`：和上面的同级部署结构匹配；如果 Python SDK 放到别处，这里也要同步修改。
 

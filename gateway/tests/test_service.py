@@ -94,6 +94,7 @@ def settings(tmp_path: Path) -> GatewaySettings:
             },
             "capabilities": ["cap-a", "cap-b"],
             "task": {
+                "task_id": "task-fixed",
                 "description": "configured task",
                 "termination_reason": "configured end",
             },
@@ -110,7 +111,7 @@ def test_seven_trigger_operations_and_termination_callback(tmp_path: Path) -> No
     assert service.register_identity().data["agent_id"] == "did:acn:agent:test"
     assert service.register_capabilities().result
     assert service.join_network().result
-    assert service.execute_task().data["task_id"] == "task-test"
+    assert service.execute_task().data["task_id"] == "task-fixed"
     assert service.broadcast_terminate_task().result
 
     blocked_logout = service.logout_network()
@@ -118,12 +119,13 @@ def test_seven_trigger_operations_and_termination_callback(tmp_path: Path) -> No
     assert "termination" in blocked_logout.message
 
     fake.callbacks["on_terminate_task_received"](
-        {"task_id": "task-test", "reason": "broadcast received"}
+        {"task_id": "task-fixed", "reason": "broadcast received"}
     )
     assert service.state()["task_status"] == "terminated"
     assert service.logout_network().result
     assert service.deregister().result
     assert service.state()["agent_id"] is None
+    assert ("request_task_execution", "did:acn:agent:test", "configured task", "task-fixed") in fake.calls
 
 
 def test_callbacks_are_kept_inside_gateway(tmp_path: Path) -> None:

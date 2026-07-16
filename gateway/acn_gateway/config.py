@@ -30,7 +30,7 @@ class NetworkSettings(BaseModel):
 
 
 class PythonSdkSettings(BaseModel):
-    source_path: str = "/home/acn/zxy/td_tech/acn_sdk"
+    source_path: str = "../acn_sdk"
     runtime_dir: str = "./runtime"
     log_level: str = "INFO"
     network: NetworkSettings = Field(default_factory=NetworkSettings)
@@ -45,10 +45,19 @@ class AgentSettings(BaseModel):
 
 
 class TaskSettings(BaseModel):
+    task_id: str | None = None
     description: str
     termination_reason: str = "Android triggered task termination"
     termination_force: bool = False
     collaboration_description: str = "Gateway automatic collaboration"
+
+    @field_validator("task_id")
+    @classmethod
+    def normalize_task_id(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        value = value.strip()
+        return value or None
 
 
 class DeregisterSettings(BaseModel):

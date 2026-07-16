@@ -157,7 +157,7 @@ Android module 当前没有 OkHttp、WebSocket、MoQ、协程库或 JSON 第三�
 | 1 | `registerIdentity()` | `POST /sdk/register-identity` | `register_agent_info()` | `agent` 配置 |
 | 2 | `registerCapabilities()` | `POST /sdk/register-capabilities` | `register_agent_attribute()` | `capabilities` 配置 |
 | 3 | `joinNetwork()` | `POST /sdk/join-network` | `join_network()` | Gateway 状态中的 `agent_id` |
-| 4 | `executeTask()` | `POST /sdk/execute-task` | `request_task_execution()` | `task.description` 配置 |
+| 4 | `executeTask()` | `POST /sdk/execute-task` | `request_task_execution()` | `task.task_id` 和 `task.description` 配置 |
 | 5 | `broadcastTerminateTask()` | `POST /sdk/broadcast-terminate-task` | `broadcast_terminate_task()` | `task.termination_*` 配置 |
 | 6 | `logoutNetwork()` | `POST /sdk/logout-network` | `logout_network()` | Gateway 状态中的 `agent_id` |
 | 7 | `deregister()` | `POST /sdk/deregister` | `deregister_agent()` | `deregister.reason` 配置 |
@@ -203,6 +203,7 @@ Android module 当前没有 OkHttp、WebSocket、MoQ、协程库或 JSON 第三�
 | ACN 网络地址和端口 | `python_sdk.network` | 否 |
 | Agent 名称、owner、描述、优先级、metadata | `agent` | 否 |
 | 能力列表 | `capabilities` | 否 |
+| 固定任务 ID | `task.task_id` | 否 |
 | 任务描述 | `task.description` | 否 |
 | 协同描述 | `task.collaboration_description` | 否 |
 | 广播结束原因和 force 标志 | `task.termination_reason`、`task.termination_force` | 否 |
@@ -296,7 +297,7 @@ Gateway
 Android
   -> executeTask()
 Gateway
-  -> Python SDK request_task_execution(agent_id, task.description)
+  -> Python SDK request_task_execution(agent_id, task.description, task_id=task.task_id)
   -> 保存 current_task_id
   -> task_status = processing
 
@@ -429,6 +430,7 @@ cp config.example.yaml config.yaml
 
 - `python_sdk.source_path`，同级部署时保持 `../acn_sdk`
 - `python_sdk.network.network_ip`
+- `task.task_id`
 - ACN 各组件端口
 - `agent`
 - `capabilities`

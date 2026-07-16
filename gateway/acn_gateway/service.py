@@ -144,16 +144,18 @@ class GatewayService:
                 return agent_id
             if self.task_status in {"processing", "terminating"}:
                 return self._failure(f"Task {self.current_task_id} is still {self.task_status}")
+            configured_task_id = self.settings.task.task_id
             ok, message = self.sdk.request_task_execution(
                 agent_id,
                 self.settings.task.description,
-                task_id=None,
+                task_id=configured_task_id,
             )
             if not ok:
                 return self._failure(message)
-            self.current_task_id = message
+            task_id = configured_task_id or message
+            self.current_task_id = task_id
             self.task_status = "processing"
-            return self._success(task_id=message)
+            return self._success(task_id=task_id, sdk_response=message)
 
     def broadcast_terminate_task(self) -> ServiceResult:
         with self._lock:

@@ -34,6 +34,8 @@ capabilities:
   - 目标跟踪
 
 task:
+  # 固定任务 ID。Android 执行任务时不传 task_id，由 Gateway 使用这里的值。
+  task_id: task-12345
   description: 执行 IMT2030 测试任务
   collaboration_description: Gateway 自动协同任务
   termination_reason: Android 触发广播结束任务
