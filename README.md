@@ -1,3 +1,6 @@
+# 分支描述：
+该分支用于雷鸟眼镜agent参与acn组网，主要包括两大组件，分别为acn-sdk和gateway，但都不直接使用。acn-sdk是android版本的简化sdk，用于集成至6g-core/RAYNEO-ctrl这一手机APP，最终版本见https://github.com/6g-core/RAYNEO-ctrl/tree/IMT2030-master。gateway是python版本gateway，用于接收app发送的http请求，并调用对应的python版本sdk，gateway+python版本的sdk最终版本见https://github.com/acore2026/acn_sdk/tree/IMT2030-master/RAYNEO。
+
 # ACN Android Light SDK + Python Gateway
 
 本工程实现“Android 只触发操作，所有 ACN 能力由 Python Gateway 执行”的方案。
