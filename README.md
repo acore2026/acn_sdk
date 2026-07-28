@@ -1,10 +1,13 @@
 # ACN SDK
 
+> 运行在雷鸟眼镜对应上位机，执行方式为 `./gateway/start_gateway.sh`
+
 ACN SDK 是机器人端的 Python 组件，用于和核心网侧的 `AcnAgent`、`AgentGW`、`ARF` 以及 `MOQ Relay` 联调。当前仓库只实现 SDK 侧能力，核心网相关部件通过本地 mock 服务模拟。
 
 ## 入口
 
 - `acn_sdk/sdk.py`：`AcnSDK` 聚合入口
+- `gateway/start_gateway.sh`：雷鸟眼镜对应上位机启动入口
 - `acn_sdk/core/`：配置、模型、状态常量和服务实现
 - `examples/`：演示脚本
 - `mock/`：本地 mock 服务

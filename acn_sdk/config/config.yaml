@@ -1,5 +1,5 @@
 network:
-  network_ip: 101.245.78.174
+  network_ip: 192.168.1.10
   acn_agent_port: 9010
   arf_port: 9001
   agent_gw_ws_port: 9002
