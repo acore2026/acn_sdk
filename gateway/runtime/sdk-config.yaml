@@ -1,0 +1,14 @@
+network:
+  network_ip: localhost
+  acn_agent_port: 9010
+  arf_port: 9001
+  agent_gw_ws_port: 9002
+  agent_gw_moq_port: 9003
+  web_ui_port: 9005
+  path: /ws
+storage:
+  identity_file: /home/aicor/acn-gateway-sdk/gateway/runtime/data/identity.json
+  private_key_file: /home/aicor/acn-gateway-sdk/gateway/runtime/data/keys/private_key.pem
+  public_key_file: /home/aicor/acn-gateway-sdk/gateway/runtime/data/keys/public_key.pem
+  log_dir: /home/aicor/acn-gateway-sdk/gateway/runtime/logs
+log_level: INFO
