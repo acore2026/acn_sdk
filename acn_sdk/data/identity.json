@@ -1,0 +1,110 @@
+{
+  "agent_id": "did:udid:type2.rid678.achid0.userid1380013811196654@6gc.mnc015.mcc234.3gppnetwork.org",
+  "vc0": {
+    "context": [
+      "3gpp-ts-33.xxx-v20.0.0"
+    ],
+    "id": "CMCC/credentials/7672",
+    "type": [
+      "VerifiableCredential",
+      "BindingSIMCredential"
+    ],
+    "issuer": "did:udid:idm@6gc.mnc015.mcc234.3gppnetwork.org",
+    "valid_from": "2026-07-27T07:40:33Z",
+    "valid_until": "2027-07-27T07:40:33Z",
+    "claims": {
+      "agent_name": "RobotDog",
+      "agent_id": "did:udid:type2.rid678.achid0.userid1380013811196654@6gc.mnc015.mcc234.3gppnetwork.org",
+      "agent_attribute": "6G业务开通",
+      "master_id": "type0.rid678.schid0.userid1userid20001@6gc0001@6gc.mnc015.mcc234.3gppnetwork.org",
+      "self_id": "type0.rid678.schid0..mnc015.mcc234.3gppnetwork.org"
+    },
+    "proof": {
+      "creator": "did:udid:idm@6gc.mnc015.mcc234.3gppnetwork.org#keys-1",
+      "signature_value": "MEYCIQCUCCKoKC3BlDmvwaIx9zHEiYtGMpa0TPUrApAZklrhSgIhAOz3KlZL+G+v00oKHLIOSmsJbfxe+vOoxPpo4RhQKSj7"
+    }
+  },
+  "capability_names": [
+    "载重运输",
+    "自主导航",
+    "高清摄像"
+  ],
+  "capability_vcs": [
+    {
+      "context": [
+        "3gpp-ts-33.xxx-v20.0.0"
+      ],
+      "id": "robot-factory/credentials/8305",
+      "type": [
+        "VerifiableCredential",
+        "BindingSIMCredential"
+      ],
+      "issuer": "did:robotfactoryissuer@6gc.mnc015.mcc234.3gppnetwork",
+      "valid_from": "2026-07-26T07:40:41.791730+00:00",
+      "valid_until": "2027-07-27T07:40:41.791730+00:00",
+      "claims": {
+        "agent_name": "RobotDog",
+        "agent_id": "did:udid:type2.rid678.achid0.userid1380013811196654@6gc.mnc015.mcc234.3gppnetwork.org",
+        "agent_attribute": "载重运输",
+        "authorization_mode": "Mode2"
+      },
+      "proof": {
+        "creator": "did:robotfactoryissuer@6gc.mnc015.mcc234.3gppnetwork#keys-1",
+        "signature_value": "MEQCIDA3FyPpebFmdfntCEhjxMf5FtTTUN7IEDYmecs5SrCDAiBI/x7avmGdmOQpjRDTa57KA7S2RaGwBhQ86/67ipQijw=="
+      }
+    },
+    {
+      "context": [
+        "3gpp-ts-33.xxx-v20.0.0"
+      ],
+      "id": "robot-factory/credentials/1153",
+      "type": [
+        "VerifiableCredential",
+        "BindingSIMCredential"
+      ],
+      "issuer": "did:robotfactoryissuer@6gc.mnc015.mcc234.3gppnetwork",
+      "valid_from": "2026-07-26T07:40:41.791730+00:00",
+      "valid_until": "2027-07-27T07:40:41.791730+00:00",
+      "claims": {
+        "agent_name": "RobotDog",
+        "agent_id": "did:udid:type2.rid678.achid0.userid1380013811196654@6gc.mnc015.mcc234.3gppnetwork.org",
+        "agent_attribute": "自主导航",
+        "authorization_mode": "Mode2"
+      },
+      "proof": {
+        "creator": "did:robotfactoryissuer@6gc.mnc015.mcc234.3gppnetwork#keys-1",
+        "signature_value": "MEQCIES+pKKsxlVpAol8y3csQn4wTVFY/rq6ojaknZ9MCLR1AiAQ06t9Z/G9keXhHIUdquYOLLfX3ThtSlBPGqWYX9qsqA=="
+      }
+    },
+    {
+      "context": [
+        "3gpp-ts-33.xxx-v20.0.0"
+      ],
+      "id": "robot-factory/credentials/1549",
+      "type": [
+        "VerifiableCredential",
+        "BindingSIMCredential"
+      ],
+      "issuer": "did:robotfactoryissuer@6gc.mnc015.mcc234.3gppnetwork",
+      "valid_from": "2026-07-26T07:40:41.791730+00:00",
+      "valid_until": "2027-07-27T07:40:41.791730+00:00",
+      "claims": {
+        "agent_name": "RobotDog",
+        "agent_id": "did:udid:type2.rid678.achid0.userid1380013811196654@6gc.mnc015.mcc234.3gppnetwork.org",
+        "agent_attribute": "高清摄像",
+        "authorization_mode": "Mode2"
+      },
+      "proof": {
+        "creator": "did:robotfactoryissuer@6gc.mnc015.mcc234.3gppnetwork#keys-1",
+        "signature_value": "MEYCIQCQsTR4RJyolgfWczcH7xPtq/as73TQBdCZKJq4z4yGnQIhAJEMBbzi4YBEs+6nI8ryOSTEhQs1r+NdrOXO2IdzbNa0"
+      }
+    }
+  ],
+  "agent_name": "RobotDog",
+  "owner": "13800138111",
+  "priority": 4,
+  "metadata": {
+    "region": "CN",
+    "role": "collaborator"
+  }
+}

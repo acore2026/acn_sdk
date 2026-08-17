@@ -1,0 +1,1 @@
+unitree ALL=(root) NOPASSWD: /bin/systemctl start robotdog-acn.service, /bin/systemctl stop robotdog-acn.service, /bin/systemctl status robotdog-acn.service, /bin/systemctl is-active robotdog-acn.service

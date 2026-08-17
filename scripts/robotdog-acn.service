@@ -1,0 +1,21 @@
+[Unit]
+Description=RobotDog ACN SDK
+After=network.target
+
+[Service]
+Type=simple
+User=unitree
+WorkingDirectory=/home/unitree/zxy/imt
+ExecStart=/bin/bash -lc 'while ! nc -z 192.168.1.47 9010; do echo "waiting for ACN 192.168.1.47:9010"; sleep 10; done; exec /home/unitree/zxy/imt/.venv/bin/python /home/unitree/zxy/imt/examples/demo_robotdog_register_join.py'
+ExecStop=-/home/unitree/zxy/imt/.venv/bin/python /home/unitree/zxy/imt/examples/demo_robotdog_logout_deregister.py
+Restart=always
+RestartSec=10
+StartLimitIntervalSec=0
+TimeoutStartSec=0
+TimeoutStopSec=60
+Environment=PYTHONUNBUFFERED=1
+StandardOutput=append:/home/unitree/zxy/imt/robotdog-acn.log
+StandardError=append:/home/unitree/zxy/imt/robotdog-acn.err.log
+
+[Install]
+WantedBy=multi-user.target

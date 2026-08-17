@@ -1,0 +1,519 @@
+机器狗 WebSocket 生命周期问题说明与解决方式
+==========================================
+
+一、问题现象
+------------
+
+执行：
+
+    python examples/demo_robotdog_register_join.py
+
+之后，前端可能显示机器狗是 offline。
+
+直接原因是：脚本完成身份注册、能力注册、入网认证之后，如果 Python 进程退出，
+WebSocket 连接也会随之断开。前端或 AgentGW 如果根据 WebSocket 是否连接来判断
+在线状态，就会显示 offline。
+
+
+二、根本原因
+------------
+
+当前流程中：
+
+1. register_agent_info() 负责注册机器狗身份。
+
+2. register_agent_attribute() 负责注册机器狗能力。
+
+3. join_network() 负责连接 AgentGW WebSocket，并把 SDK 当前进程内的
+   network_status 设置为 online。
+
+4. 这个 online 状态只存在于当前 Python 进程内。
+
+5. demo_robotdog_register_join.py 如果执行完成后退出，Python 进程结束，
+   WebSocket 连接就会关闭。
+
+所以，如果希望机器狗一直在线，调用 join_network() 的进程就不能退出，必须常驻运行。
+
+
+三、正确运行模型
+----------------
+
+期望的机器狗生命周期应该是：
+
+    开机：
+        执行 demo_robotdog_register_join.py
+        完成身份注册
+        完成能力注册
+        完成入网认证
+        保持进程常驻
+
+    运行中：
+        WebSocket 持续连接
+        前端显示在线
+
+    停止服务或关机前：
+        先执行 demo_robotdog_logout_deregister.py
+        退出网络
+        去注册身份
+
+
+四、当前解决方式
+----------------
+
+demo_robotdog_register_join.py 已经改成常驻脚本。
+
+入网成功后，脚本会继续运行：
+
+    while not stop_requested:
+        time.sleep(5)
+
+这样 Python 进程不会立即退出，WebSocket 连接也不会马上断开。
+
+demo_robotdog_logout_deregister.py 用于停止服务、关机前或手动清理时执行。
+它会从 identity.json 恢复机器狗身份状态，然后执行退出网络和去注册。
+
+
+五、手动运行方式
+----------------
+
+启动机器狗并保持在线：
+
+    cd /path/to/acn_sdk_python
+    source .venv/bin/activate
+    python examples/demo_robotdog_register_join.py
+
+退出网络并去注册：
+
+    cd /path/to/acn_sdk_python
+    source .venv/bin/activate
+    python examples/demo_robotdog_logout_deregister.py
+
+
+六、推荐的 Linux systemd 配置
+-----------------------------
+
+建议在 Linux 上使用 systemd 管理机器狗 SDK 进程。
+
+创建服务文件：
+
+    sudo vim /etc/systemd/system/robotdog-acn.service
+
+示例内容：
+
+[Unit]
+Description=RobotDog ACN SDK
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=unitree
+WorkingDirectory=/home/unitree/zxy/imt
+ExecStart=/home/unitree/zxy/imt/.venv/bin/python demo_robotdog_register_join.py
+ExecStop=/home/unitree/zxy/imt/.venv/bin/python demo_robotdog_logout_deregister.py
+Restart=on-failure
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target
+
+启用并启动服务：
+
+    sudo systemctl daemon-reload
+    sudo systemctl enable robotdog-acn
+    sudo systemctl start robotdog-acn
+
+查看状态：
+
+    sudo systemctl status robotdog-acn
+
+手动停止：
+
+    sudo systemctl stop robotdog-acn
+
+当执行 systemctl stop 或正常停止 systemd 服务时，systemd 会执行 ExecStop。
+也就是会运行：
+
+    /home/unitree/zxy/imt/.venv/bin/python demo_robotdog_logout_deregister.py
+
+从而完成退出网络和去注册。
+
+注意：机器狗现场关机通常属于硬下电，硬下电不会触发 systemd 的 ExecStop，
+也不会自动执行 demo_robotdog_logout_deregister.py。
+如果需要完成退出网络和去注册，必须在硬下电前先执行：
+
+    sudo systemctl stop robotdog-acn
+
+也可以用手机或其他同网段设备调用 robotdog-acn-control 监听服务的停止接口：
+
+    curl -X POST http://机器狗IP:9005/stop
+
+该接口会执行 sudo systemctl stop robotdog-acn.service，
+从而触发 robotdog-acn.service 的 ExecStop，完成退出网络和去注册。
+
+或手动运行：
+
+    /home/unitree/zxy/imt/.venv/bin/python demo_robotdog_logout_deregister.py
+
+注意：
+
+    手动执行时可以使用：
+
+        cd ~/zxy/imt
+        source .venv/bin/activate
+        python3 demo_robotdog_register_join.py
+
+    但在 systemd 中不需要 source .venv/bin/activate。
+    直接使用虚拟环境里的 Python 即可：
+
+        /home/unitree/zxy/imt/.venv/bin/python
+
+    可以先手动验证：
+
+        cd /home/unitree/zxy/imt
+        /home/unitree/zxy/imt/.venv/bin/python demo_robotdog_register_join.py
+
+    如果这条命令能运行，systemd 中的 ExecStart 通常也可以运行。
+
+
+七、配置注意事项
+----------------
+
+两个脚本都直接读取：
+
+    acn_sdk/config/config.yaml
+
+需要确认以下配置指向真实可访问的 ACN 服务：
+
+    network.network_ip
+    network.acn_agent_port
+    network.agent_gw_ws_port
+    network.agent_gw_moq_port
+    network.path
+
+如果使用本地 mock 服务，network_ip 通常应设置为：
+
+    127.0.0.1
+
+如果部署到真实环境，network_ip 应设置为 ACN 服务可访问的 IP 地址。
+
+
+八、identity.json 说明
+----------------------
+
+机器狗身份状态保存在配置中的 identity_file，通常是：
+
+    data/identity.json
+
+里面包含：
+
+    agent_id
+    vc0
+    capability_names
+    capability_vcs
+    agent_name
+    owner
+    priority
+    metadata
+
+demo_robotdog_logout_deregister.py 会先读取 identity.json，再初始化 AcnSDK。
+
+这样做是因为当前 SDK 初始化时会清理 identity.json。
+为了能在第二个脚本中继续使用第一个脚本注册得到的身份，必须先把 identity.json
+读入内存，然后在 AcnSDK 初始化后恢复到 identity_manager 中。
+
+
+九、结论
+--------
+
+如果希望前端持续显示机器狗在线，不能让 demo_robotdog_register_join.py 执行完就退出。
+
+正确方式是：
+
+    开机执行 demo_robotdog_register_join.py，并让它常驻运行。
+    停止服务或关机前执行 demo_robotdog_logout_deregister.py。
+
+注意：如果机器狗是硬下电关机，systemd 不会执行 ExecStop，
+因此不会自动完成退出网络和去注册。
+
+这样 WebSocket 才会在运行期间保持连接，前端也能持续看到机器狗在线。
+
+
+十、开机无网络时的 systemd 修改方式
+----------------------------------
+
+宇树机器狗开机后可能还没有联网，需要操作人员手动联网。
+如果服务在开机时立即执行 demo_robotdog_register_join.py，可能会因为访问不到
+AcnAgent 而失败，例如：
+
+    Network is unreachable
+
+这种情况下，不应该让服务启动后马上失败退出，而是让 systemd 服务常驻等待网络。
+当 ACN 服务端口可达后，再执行注册、能力注册和入网认证。
+
+推荐将 robotdog-acn.service 修改为：
+
+[Unit]
+Description=RobotDog ACN SDK
+After=network.target
+
+[Service]
+Type=simple
+User=unitree
+WorkingDirectory=/home/unitree/zxy/imt
+ExecStart=/bin/bash -lc 'while ! nc -z 192.168.1.10 9010; do echo "waiting for ACN 192.168.1.10:9010"; sleep 10; done; exec /home/unitree/zxy/imt/.venv/bin/python demo_robotdog_register_join.py'
+ExecStop=-/home/unitree/zxy/imt/.venv/bin/python demo_robotdog_logout_deregister.py
+Restart=always
+RestartSec=10
+StartLimitIntervalSec=0
+TimeoutStartSec=0
+TimeoutStopSec=60
+
+[Install]
+WantedBy=multi-user.target
+
+该配置的含义：
+
+1. 机器狗开机后，systemd 会启动 robotdog-acn 服务。
+
+2. 如果此时还没有联网，或 192.168.1.10:9010 不可达，服务不会退出，
+   而是每隔 10 秒检测一次：
+
+       nc -z 192.168.1.10 9010
+
+3. 操作人员手动联网后，只要 192.168.1.10:9010 可达，就会自动执行：
+
+       /home/unitree/zxy/imt/.venv/bin/python demo_robotdog_register_join.py
+
+4. demo_robotdog_register_join.py 入网成功后会常驻运行，保持 WebSocket 连接。
+
+5. 执行 systemctl stop 或正常停止服务时，systemd 会执行 ExecStop：
+
+       /home/unitree/zxy/imt/.venv/bin/python demo_robotdog_logout_deregister.py
+
+   从而完成退出网络和去注册。
+
+   但机器狗硬下电关机时不会触发 ExecStop，也不会自动执行去注册流程。
+   如果需要确保退出网络和去注册，应在硬下电前先执行：
+
+       sudo systemctl stop robotdog-acn.service
+
+   也可以用手机或其他同网段设备调用 robotdog-acn-control 的停止接口：
+
+       curl -X POST http://机器狗IP:9005/stop
+
+   该接口会停止 robotdog-acn.service，从而触发 ExecStop。
+
+   或手动运行 demo_robotdog_logout_deregister.py。
+
+修改 service 文件后执行：
+
+    sudo systemctl daemon-reload
+    sudo systemctl reset-failed robotdog-acn.service
+    sudo systemctl restart robotdog-acn.service
+
+查看实时日志：
+
+    journalctl -u robotdog-acn.service -f
+
+如果看到：
+
+    waiting for ACN 192.168.1.10:9010
+
+说明服务正在等待网络或等待 ACN Agent 端口可达。
+
+
+十一、nc 命令说明
+----------------
+
+确认机器狗上是否有 nc：
+
+    which nc
+
+如果有，会输出类似：
+
+    /usr/bin/nc
+
+检测 ACN Agent 端口是否可达：
+
+    nc -z 192.168.1.10 9010
+    echo $?
+
+说明：
+
+    返回 0    表示端口可达
+    返回非 0  表示端口不可达
+
+注意：
+
+    nc -z 192.168.1.10 9010
+
+成功时通常没有输出，这是正常的。它主要通过退出码判断成功或失败。
+
+如果希望看到明确输出，可以使用：
+
+    nc -zv 192.168.1.10 9010
+
+如果系统没有 nc，可以安装：
+
+    sudo apt update
+    sudo apt install netcat-openbsd
+
+十二、安装 robotdog-acn 控制监听服务
+-------------------------------
+
+如果希望通过 HTTP 接口控制机器狗 ACN 服务启动和停止，可以在机器狗上单独启动一个控制监听服务。
+该监听服务只负责执行以下固定命令：
+
+sudo systemctl start robotdog-acn.service
+sudo systemctl stop robotdog-acn.service
+sudo systemctl status robotdog-acn.service
+sudo systemctl is-active robotdog-acn.service
+
+当前设计为：
+
+监听地址：
+0.0.0.0:9005
+
+接口：
+POST /start     启动 robotdog-acn.service
+POST /stop      停止 robotdog-acn.service
+GET  /status    查看 robotdog-acn.service 状态
+GET  /is-active 查看 robotdog-acn.service 是否 active
+GET  /health    检查控制监听服务是否运行
+
+注意：
+当前版本不保留 token。
+如果监听 0.0.0.0:9005，同一网络内能访问机器狗 9005 端口的设备都可以调用 start/stop。
+如果现场网络不是完全可信，建议通过防火墙、路由或上层网关限制访问来源。
+
+1. 复制控制监听脚本
+
+将本地文件：
+
+scripts/robotdog_acn_control_server.py
+
+复制到机器狗：
+
+/home/unitree/zxy/imt/robotdog_acn_control_server.py
+
+可以使用 scp：
+
+scp -P 40032 scripts/robotdog_acn_control_server.py unitree@192.168.1.107:/home/unitree/zxy/imt/robotdog_acn_control_server.py
+
+2. 创建 sudoers 最小权限文件
+
+在机器狗上执行：
+
+sudo vim /etc/sudoers.d/robotdog-acn-control
+
+写入以下内容：
+
+unitree ALL=(root) NOPASSWD: /bin/systemctl start robotdog-acn.service, /bin/systemctl stop robotdog-acn.service, /bin/systemctl status robotdog-acn.service, /bin/systemctl is-active robotdog-acn.service
+
+设置权限：
+
+sudo chmod 440 /etc/sudoers.d/robotdog-acn-control
+
+检查 sudoers 语法：
+
+sudo visudo -cf /etc/sudoers.d/robotdog-acn-control
+
+验证免密命令是否可用：
+
+sudo -n /bin/systemctl is-active robotdog-acn.service
+
+如果该命令没有提示输入密码，说明 sudoers 配置生效。
+
+3. 创建控制监听 systemd 服务
+
+在机器狗上执行：
+
+sudo vim /etc/systemd/system/robotdog-acn-control.service
+
+写入以下内容：
+
+[Unit]
+Description=RobotDog ACN Control Listener
+After=network.target
+
+[Service]
+Type=simple
+User=unitree
+WorkingDirectory=/home/unitree/zxy/imt
+ExecStart=/usr/bin/python3 /home/unitree/zxy/imt/robotdog_acn_control_server.py --bind 0.0.0.0 --port 9005
+Restart=always
+RestartSec=3
+Environment=PYTHONUNBUFFERED=1
+StandardOutput=append:/home/unitree/zxy/imt/robotdog-acn-control.log
+StandardError=append:/home/unitree/zxy/imt/robotdog-acn-control.err.log
+
+[Install]
+WantedBy=multi-user.target
+
+4. 启用并启动控制监听服务
+
+sudo systemctl daemon-reload
+sudo systemctl enable robotdog-acn-control.service
+sudo systemctl start robotdog-acn-control.service
+
+查看状态：
+
+sudo systemctl status robotdog-acn-control.service
+
+查看日志：
+
+tail -f /home/unitree/zxy/imt/robotdog-acn-control.log
+tail -f /home/unitree/zxy/imt/robotdog-acn-control.err.log
+
+5. 调用方式
+
+在机器狗本机调用：
+
+curl http://127.0.0.1:9005/health
+curl http://127.0.0.1:9005/status
+curl -X POST http://127.0.0.1:9005/stop
+curl -X POST http://127.0.0.1:9005/start
+
+在其他机器上调用：
+
+curl http://192.168.1.107:9005/health
+curl http://192.168.1.107:9005/status
+curl -X POST http://192.168.1.107:9005/stop
+curl -X POST http://192.168.1.107:9005/start
+
+6. 常见问题
+
+如果调用 /start 或 /stop 返回 sudo 相关错误，优先检查：
+
+sudo visudo -cf /etc/sudoers.d/robotdog-acn-control
+sudo -n /bin/systemctl is-active robotdog-acn.service
+
+如果访问 192.168.1.107:9005 不通，检查监听服务是否启动：
+
+sudo systemctl status robotdog-acn-control.service
+
+检查端口是否监听：
+
+ss -ltnp | grep 9005
+
+如果 9005 端口已被其他程序占用，需要更换 robotdog-acn-control.service 中的 --port 参数。
+
+7. 停止或卸载控制监听服务
+
+停止控制监听：
+
+sudo systemctl stop robotdog-acn-control.service
+
+禁用开机自启：
+
+sudo systemctl disable robotdog-acn-control.service
+
+删除服务文件：
+
+sudo rm /etc/systemd/system/robotdog-acn-control.service
+sudo systemctl daemon-reload
+
+删除 sudoers 权限：
+
+sudo rm /etc/sudoers.d/robotdog-acn-control

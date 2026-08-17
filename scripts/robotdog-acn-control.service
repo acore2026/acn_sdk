@@ -1,0 +1,17 @@
+[Unit]
+Description=RobotDog ACN Control Listener
+After=network.target
+
+[Service]
+Type=simple
+User=unitree
+WorkingDirectory=/home/unitree/zxy/imt
+ExecStart=/usr/bin/python3 /home/unitree/zxy/imt/robotdog_acn_control_server.py --bind 0.0.0.0 --port 9005
+Restart=always
+RestartSec=3
+Environment=PYTHONUNBUFFERED=1
+StandardOutput=append:/home/unitree/zxy/imt/robotdog-acn-control.log
+StandardError=append:/home/unitree/zxy/imt/robotdog-acn-control.err.log
+
+[Install]
+WantedBy=multi-user.target
