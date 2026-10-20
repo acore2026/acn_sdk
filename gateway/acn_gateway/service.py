@@ -88,6 +88,7 @@ class GatewayService:
 
     def state(self) -> dict[str, Any]:
         with self._lock:
+            self._resync_with_sdk()
             return {
                 "agent_id": self.agent_id,
                 "current_task_id": self.current_task_id,
@@ -99,8 +100,41 @@ class GatewayService:
                 "moq_messages_received": self.moq_messages_received,
             }
 
+    def _resync_with_sdk(self) -> None:
+        """Drop wrapper bookkeeping that the SDK has already discarded.
+
+        The Python SDK wipes its local identity when it receives the CLEAR
+        message that the environment reset (WebUI "Clear" button) pushes over
+        WebSocket. That happens inside the SDK's network listener and never
+        passes through this wrapper, so the wrapper keeps serving a stale
+        agent_id/online/processing snapshot and every later operation fails
+        with "The supplied agent_id does not match this device.". Re-derive
+        the mirror from the SDK before each operation so the app can simply
+        register identity again after an environment reset.
+        """
+        if self._sdk is None:
+            return
+        identity_manager = getattr(self.sdk, "identity_manager", None)
+        if identity_manager is None:
+            # SDK does not expose identity state (e.g. test fakes); nothing to sync.
+            return
+        sdk_agent_id = getattr(identity_manager, "agent_id", None)
+        if not sdk_agent_id and self.agent_id:
+            self.agent_id = None
+            self.current_task_id = None
+            self.identity_registered = False
+            self.capabilities_registered = False
+            self.network_status = "offline"
+            self.task_status = "idle"
+            return
+        if self.network_status == "online":
+            sdk_network_status = getattr(self.sdk, "network_status", "online")
+            if sdk_network_status == "offline":
+                self.network_status = "offline"
+
     def register_identity(self) -> ServiceResult:
         with self._lock:
+            self._resync_with_sdk()
             if self.agent_id:
                 return self._success("Identity is already registered", agent_id=self.agent_id)
             agent = self.settings.agent
@@ -115,6 +149,7 @@ class GatewayService:
 
     def register_capabilities(self) -> ServiceResult:
         with self._lock:
+            self._resync_with_sdk()
             agent_id = self._require_agent_id()
             if isinstance(agent_id, ServiceResult):
                 return agent_id
@@ -126,6 +161,7 @@ class GatewayService:
 
     def join_network(self) -> ServiceResult:
         with self._lock:
+            self._resync_with_sdk()
             agent_id = self._require_agent_id()
             if isinstance(agent_id, ServiceResult):
                 return agent_id
@@ -139,6 +175,7 @@ class GatewayService:
 
     def execute_task(self) -> ServiceResult:
         with self._lock:
+            self._resync_with_sdk()
             agent_id = self._require_online_agent_id()
             if isinstance(agent_id, ServiceResult):
                 return agent_id
@@ -159,6 +196,7 @@ class GatewayService:
 
     def broadcast_terminate_task(self) -> ServiceResult:
         with self._lock:
+            self._resync_with_sdk()
             agent_id = self._require_online_agent_id()
             if isinstance(agent_id, ServiceResult):
                 return agent_id
@@ -178,6 +216,7 @@ class GatewayService:
 
     def logout_network(self) -> ServiceResult:
         with self._lock:
+            self._resync_with_sdk()
             agent_id = self._require_agent_id()
             if isinstance(agent_id, ServiceResult):
                 return agent_id
@@ -193,6 +232,7 @@ class GatewayService:
 
     def deregister(self) -> ServiceResult:
         with self._lock:
+            self._resync_with_sdk()
             agent_id = self._require_agent_id()
             if isinstance(agent_id, ServiceResult):
                 return agent_id

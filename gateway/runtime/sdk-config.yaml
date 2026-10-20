@@ -7,8 +7,8 @@ network:
   web_ui_port: 9005
   path: /ws
 storage:
-  identity_file: /home/aicor/acn-gateway-sdk/gateway/runtime/data/identity.json
-  private_key_file: /home/aicor/acn-gateway-sdk/gateway/runtime/data/keys/private_key.pem
-  public_key_file: /home/aicor/acn-gateway-sdk/gateway/runtime/data/keys/public_key.pem
-  log_dir: /home/aicor/acn-gateway-sdk/gateway/runtime/logs
+  identity_file: /home/aicor/compute_network/sandbox-demo/acn_sdk/gateway/runtime/data/identity.json
+  private_key_file: /home/aicor/compute_network/sandbox-demo/acn_sdk/gateway/runtime/data/keys/private_key.pem
+  public_key_file: /home/aicor/compute_network/sandbox-demo/acn_sdk/gateway/runtime/data/keys/public_key.pem
+  log_dir: /home/aicor/compute_network/sandbox-demo/acn_sdk/gateway/runtime/logs
 log_level: INFO
